@@ -27,4 +27,4 @@ Saída do Programa:
 Se existir um caminho seguro, imprimir a sequência ordenada de coordenadas que o robô deve percorrer da origem até o ouro (ex: (0,0) -> (1,0) -> (2,0) -> (2,1) -> (2,2) -> (2,3)). Se o mapa for impossível (ouro bloqueado por poços/Wumpus), imprimir uma mensagem informando que não há caminho seguro.
 
 
-// :dart:
+<!--:dart:-->
