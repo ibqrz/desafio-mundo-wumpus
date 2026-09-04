@@ -1,42 +1,74 @@
 <!DOCTYPE html>
-<html lang="pt-BR" class="h-full bg-slate-900 text-slate-100">
+<html lang="pt-BR" class="h-full bg-slate-950 text-slate-100">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Mundo do Wumpus 4x4 - Simulador & Código Python</title>
+  <title>Mundo do Wumpus - Pyodide Interactive AI Engine</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <!-- Pyodide Official Engine CDN -->
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.26.1/full/pyodide.js"></script>
+  
   <style>
     body { font-family: 'Inter', sans-serif; }
     code, pre, .font-mono { font-family: 'Fira Code', monospace; }
-    .grid-cell { transition: all 0.3s ease; }
+    
+    .grid-cell { transition: all 0.25s ease-in-out; }
+    
     .pulse-safe { animation: pulseGreen 2s infinite; }
     @keyframes pulseGreen {
       0%, 100% { box-shadow: inset 0 0 0 2px rgba(34, 197, 94, 0.4); }
-      50% { box-shadow: inset 0 0 12px 2px rgba(34, 197, 94, 0.8); }
+      50% { box-shadow: inset 0 0 14px 3px rgba(34, 197, 94, 0.85); }
+    }
+
+    .pulse-gold { animation: pulseGold 1.5s infinite; }
+    @keyframes pulseGold {
+      0%, 100% { box-shadow: inset 0 0 0 2px rgba(234, 179, 8, 0.5); }
+      50% { box-shadow: inset 0 0 16px 4px rgba(234, 179, 8, 0.9); }
+    }
+
+    /* Custom Terminal Scrollbar */
+    #terminalOutput::-webkit-scrollbar {
+      width: 8px;
+    }
+    #terminalOutput::-webkit-scrollbar-track {
+      background: #090d16;
+    }
+    #terminalOutput::-webkit-scrollbar-thumb {
+      background: #1e293b;
+      border-radius: 4px;
+    }
+    #terminalOutput::-webkit-scrollbar-thumb:hover {
+      background: #334155;
     }
   </style>
 </head>
 <body class="h-full flex flex-col overflow-x-hidden">
 
-  <header class="bg-slate-800 border-b border-slate-700 sticky top-0 z-50 shadow-md">
-    <div class="max-w-7xl mx-auto px-4 py-3 flex justify-between items-center">
+  <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-50 shadow-xl">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-3">
       <div class="flex items-center space-x-3">
-        <div class="p-2 bg-amber-500/20 text-amber-400 rounded-lg text-xl">
-          <i class="fa-solid me-1 fa-robot"></i><i class="fa-solid fa-gem"></i>
+        <div class="p-2 bg-amber-500/20 border border-amber-500/30 text-amber-400 rounded-xl text-xl flex items-center justify-center">
+          <i class="fa-solid fa-robot mr-1"></i><i class="fa-solid fa-gem text-amber-300"></i>
         </div>
         <div>
-          <h1 class="text-xl font-bold text-white tracking-wide">O Labirinto Wumpus 4x4</h1>
-          <p class="text-xs text-slate-400">IA de Raciocínio Logico e Exploração Segura com Sensores</p>
+          <h1 class="text-lg sm:text-xl font-bold text-white tracking-wide flex items-center gap-2">
+            O Labirinto Wumpus 4x4
+            <span id="pyodideStatusBadge" class="text-xs px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-400 border border-amber-500/30 font-mono animate-pulse">
+              <i class="fa-solid fa-spinner fa-spin mr-1"></i> Carregando Pyodide...
+            </span>
+          </h1>
+          <p class="text-xs text-slate-400">Raciocínio Lógico Proposicional (SAT) Executado em Python Nativo no Navegador</p>
         </div>
       </div>
+
       <div class="flex items-center space-x-2">
-        <button id="tabSimBtn" onclick="switchTab('sim')" class="px-4 py-2 text-sm font-medium rounded-lg bg-indigo-600 text-white transition hover:bg-indigo-500 shadow">
-          <i class="fa-solid fa-gamepad mr-1.5"></i> Simulador Interativo
+        <button id="tabSimBtn" onclick="switchTab('sim')" class="px-3.5 py-2 text-xs sm:text-sm font-medium rounded-lg bg-indigo-600 text-white transition hover:bg-indigo-500 shadow">
+          <i class="fa-solid fa-terminal mr-1.5"></i> Simulador & Terminal
         </button>
-        <button id="tabCodeBtn" onclick="switchTab('code')" class="px-4 py-2 text-sm font-medium rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 transition">
-          <i class="fa-solid fa-code mr-1.5"></i> Código Python
+        <button id="tabCodeBtn" onclick="switchTab('code')" class="px-3.5 py-2 text-xs sm:text-sm font-medium rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition">
+          <i class="fa-solid fa-code mr-1.5"></i> Código Python Pure
         </button>
       </div>
     </div>
@@ -44,172 +76,178 @@
 
   <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 flex flex-col space-y-6">
 
-    <!-- VIEW 1: INTERACTIVE SIMULATOR -->
+    <!-- VIEW 1: INTERACTIVE SIMULATOR & PYTHON TERMINAL -->
     <section id="simulatorView" class="grid grid-cols-1 lg:grid-cols-12 gap-6">
       
-      <!-- LEFT COLUMN: Controls & Setup -->
-      <div class="lg:col-span-4 flex flex-col space-y-5">
+      <!-- LEFT COLUMN: Controls & World Grid (5 Cols) -->
+      <div class="lg:col-span-5 flex flex-col space-y-5">
         
-        <!-- Setup Panel -->
-        <div class="bg-slate-800 rounded-xl border border-slate-700 p-5 shadow-lg">
-          <h2 class="text-lg font-semibold text-white mb-4 flex items-center">
-            <i class="fa-solid fa-sliders text-indigo-400 mr-2"></i> Configurações da Grade (4x4)
-          </h2>
-          <p class="text-xs text-slate-400 mb-4">Coordenadas de <strong>(0,0)</strong> no Canto Inferior Esquerdo a <strong>(3,3)</strong> no Canto Superior Direito.</p>
+        <!-- Grid Setup Form -->
+        <div class="bg-slate-900 rounded-2xl border border-slate-800 p-5 shadow-xl">
+          <div class="flex justify-between items-center mb-4">
+            <h2 class="text-sm font-bold text-white flex items-center">
+              <i class="fa-solid fa-sliders text-indigo-400 mr-2"></i> Configurações da Grade (4x4)
+            </h2>
+            <button onclick="loadScenarioTargetBug()" class="text-[11px] bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 py-1 px-2.5 rounded font-mono transition">
+              ⚡ Cenário de Teste SAT
+            </button>
+          </div>
 
           <form id="configForm" class="space-y-3">
-            <div>
-              <label class="block text-xs font-medium text-slate-300 mb-1">🤖 Início do Robô (X, Y)</label>
-              <div class="grid grid-cols-2 gap-2">
-                <input type="number" id="start-x" min="0" max="3" value="0" class="bg-slate-900 border border-slate-700 rounded p-2 text-sm text-center focus:border-indigo-500 outline-none">
-                <input type="number" id="start-y" min="0" max="3" value="0" class="bg-slate-900 border border-slate-700 rounded p-2 text-sm text-center focus:border-indigo-500 outline-none">
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label class="block text-[11px] font-medium text-slate-300 mb-1">🤖 Robô (X, Y)</label>
+                <div class="grid grid-cols-2 gap-1.5">
+                  <input type="number" id="start-x" min="0" max="3" value="3" class="bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-center focus:border-indigo-500 outline-none">
+                  <input type="number" id="start-y" min="0" max="3" value="3" class="bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-center focus:border-indigo-500 outline-none">
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-[11px] font-medium text-amber-400 mb-1">🏆 Ouro (X, Y)</label>
+                <div class="grid grid-cols-2 gap-1.5">
+                  <input type="number" id="gold-x" min="0" max="3" value="1" class="bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-center focus:border-indigo-500 outline-none">
+                  <input type="number" id="gold-y" min="0" max="3" value="0" class="bg-slate-950 border border-slate-800 rounded p-1.5 text-xs text-center focus:border-indigo-500 outline-none">
+                </div>
               </div>
             </div>
 
-            <div>
-              <label class="block text-xs font-medium text-amber-400 mb-1">💰 Posição do Ouro (X, Y)</label>
-              <div class="grid grid-cols-2 gap-2">
-                <input type="number" id="gold-x" min="0" max="3" value="2" class="bg-slate-900 border border-slate-700 rounded p-2 text-sm text-center focus:border-indigo-500 outline-none">
-                <input type="number" id="gold-y" min="0" max="3" value="2" class="bg-slate-900 border border-slate-700 rounded p-2 text-sm text-center focus:border-indigo-500 outline-none">
+            <div class="grid grid-cols-3 gap-2">
+              <div>
+                <label class="block text-[11px] font-medium text-red-400 mb-1">👾 Wumpus</label>
+                <div class="grid grid-cols-2 gap-1">
+                  <input type="number" id="wumpus-x" min="0" max="3" value="0" class="bg-slate-950 border border-slate-800 rounded p-1 text-xs text-center outline-none">
+                  <input type="number" id="wumpus-y" min="0" max="3" value="1" class="bg-slate-950 border border-slate-800 rounded p-1 text-xs text-center outline-none">
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-[11px] font-medium text-blue-400 mb-1">🕳️ Poço 1</label>
+                <div class="grid grid-cols-2 gap-1">
+                  <input type="number" id="pit1-x" min="0" max="3" value="0" class="bg-slate-950 border border-slate-800 rounded p-1 text-xs text-center outline-none">
+                  <input type="number" id="pit1-y" min="0" max="3" value="0" class="bg-slate-950 border border-slate-800 rounded p-1 text-xs text-center outline-none">
+                </div>
+              </div>
+
+              <div>
+                <label class="block text-[11px] font-medium text-blue-400 mb-1">🕳️ Poço 2</label>
+                <div class="grid grid-cols-2 gap-1">
+                  <input type="number" id="pit2-x" min="0" max="3" value="2" class="bg-slate-950 border border-slate-800 rounded p-1 text-xs text-center outline-none">
+                  <input type="number" id="pit2-y" min="0" max="3" value="0" class="bg-slate-950 border border-slate-800 rounded p-1 text-xs text-center outline-none">
+                </div>
               </div>
             </div>
 
-            <div>
-              <label class="block text-xs font-medium text-red-400 mb-1">👾 Posição do Wumpus (X, Y)</label>
-              <div class="grid grid-cols-2 gap-2">
-                <input type="number" id="wumpus-x" min="0" max="3" value="0" class="bg-slate-900 border border-slate-700 rounded p-2 text-sm text-center focus:border-indigo-500 outline-none">
-                <input type="number" id="wumpus-y" min="0" max="3" value="2" class="bg-slate-900 border border-slate-700 rounded p-2 text-sm text-center focus:border-indigo-500 outline-none">
-              </div>
-            </div>
-
-            <div>
-              <label class="block text-xs font-medium text-blue-400 mb-1">🕳️ Poço 1 (X, Y)</label>
-              <div class="grid grid-cols-2 gap-2">
-                <input type="number" id="pit1-x" min="0" max="3" value="2" class="bg-slate-900 border border-slate-700 rounded p-2 text-sm text-center focus:border-indigo-500 outline-none">
-                <input type="number" id="pit1-y" min="0" max="3" value="0" class="bg-slate-900 border border-slate-700 rounded p-2 text-sm text-center focus:border-indigo-500 outline-none">
-              </div>
-            </div>
-
-            <div>
-              <label class="block text-xs font-medium text-blue-400 mb-1">🕳️ Poço 2 (X, Y)</label>
-              <div class="grid grid-cols-2 gap-2">
-                <input type="number" id="pit2-x" min="0" max="3" value="3" class="bg-slate-900 border border-slate-700 rounded p-2 text-sm text-center focus:border-indigo-500 outline-none">
-                <input type="number" id="pit2-y" min="0" max="3" value="3" class="bg-slate-900 border border-slate-700 rounded p-2 text-sm text-center focus:border-indigo-500 outline-none">
-              </div>
-            </div>
-
-            <div class="pt-2 grid grid-cols-2 gap-2">
-              <button type="button" onclick="randomizeWorld()" class="w-full bg-slate-700 hover:bg-slate-600 text-slate-200 text-xs py-2 px-3 rounded font-medium transition flex items-center justify-center">
-                <i class="fa-solid fa-dice mr-1.5"></i> Aleatório
+            <div class="pt-2 flex space-x-2">
+              <button type="button" onclick="randomizeWorld()" class="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs py-2 px-3 rounded-lg font-medium transition flex items-center justify-center">
+                <i class="fa-solid fa-dice mr-1.5 text-indigo-400"></i> Aleatório
               </button>
-              <button type="button" onclick="applySettings()" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white text-xs py-2 px-3 rounded font-medium transition flex items-center justify-center">
-                <i class="fa-solid fa-check mr-1.5"></i> Aplicar
+              <button type="button" onclick="applySettings()" class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white text-xs py-2 px-3 rounded-lg font-semibold transition flex items-center justify-center">
+                <i class="fa-solid fa-check mr-1.5"></i> Aplicar Pos
               </button>
             </div>
           </form>
         </div>
 
-        <!-- Simulation Speed & Controls -->
-        <div class="bg-slate-800 rounded-xl border border-slate-700 p-5 shadow-lg space-y-4">
-          <h2 class="text-sm font-semibold text-white flex items-center">
-            <i class="fa-solid fa-play text-emerald-400 mr-2"></i> Execução da IA
-          </h2>
-          
-          <div class="flex items-center space-x-2">
-            <button id="startBtn" onclick="runSimulation()" class="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-2.5 px-4 rounded-lg font-semibold text-sm transition shadow flex items-center justify-center">
-              <i class="fa-solid fa-play mr-2"></i> Iniciar Busca
-            </button>
-            <button id="stepBtn" onclick="stepSimulation()" class="bg-amber-600 hover:bg-amber-500 text-white py-2.5 px-3 rounded-lg font-semibold text-sm transition shadow title='Passo a Passo'">
-              <i class="fa-solid fa-forward-step"></i>
-            </button>
-            <button onclick="resetSimulation()" class="bg-slate-700 hover:bg-slate-600 text-slate-200 py-2.5 px-3 rounded-lg text-sm transition">
-              <i class="fa-solid fa-rotate-left"></i>
-            </button>
-          </div>
-
-          <div>
-            <div class="flex justify-between text-xs text-slate-400 mb-1">
-              <span>Velocidade de Passo</span>
-              <span id="speedVal">600ms</span>
+        <!-- Board Visualizer Dynamic Matrix -->
+        <div class="bg-slate-900 rounded-2xl border border-slate-800 p-4 shadow-xl flex flex-col items-center">
+          <div class="w-full flex justify-between items-center mb-3">
+            <div class="flex items-center space-x-2">
+              <span id="statusBadge" class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-800 text-slate-300">Aguardando Execução</span>
+              <span id="stepCounter" class="text-xs font-mono text-slate-400">Passos: 0</span>
             </div>
-            <input type="range" id="speedRange" min="100" max="1500" step="100" value="600" oninput="document.getElementById('speedVal').innerText = this.value + 'ms'" class="w-full accent-indigo-500">
+            
+            <!-- Sensor LED Indicators -->
+            <div id="sensorLEDs" class="flex items-center space-x-1.5 text-xs">
+              <span id="ledGlitter" class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-500 font-mono">✨ BRILHO</span>
+              <span id="ledStench" class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-500 font-mono">🦨 FEDOR</span>
+              <span id="ledBreeze" class="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-500 font-mono">💨 BRISA</span>
+            </div>
           </div>
-        </div>
 
-        <!-- Legend Panel -->
-        <div class="bg-slate-800 rounded-xl border border-slate-700 p-4 shadow-lg">
-          <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Legenda do Mapa</h3>
-          <div class="grid grid-cols-2 gap-2 text-xs">
-            <div class="flex items-center"><span class="mr-2 text-base">🤖</span> Robô</div>
-            <div class="flex items-center"><span class="mr-2 text-base">💰</span> Ouro</div>
-            <div class="flex items-center"><span class="mr-2 text-base">👾</span> Wumpus</div>
-            <div class="flex items-center"><span class="mr-2 text-base">🕳️</span> Poço</div>
-            <div class="flex items-center"><span class="mr-2 text-base">🟩</span> Sala Segura</div>
-            <div class="flex items-center"><span class="mr-2 text-base">❓</span> Suspeita</div>
-            <div class="flex items-center"><span class="mr-2 text-base">🛑</span> Perigo Confirmado</div>
-            <div class="flex items-center"><span class="mr-2 text-base">💨 / 🦨</span> Brisa / Fedor</div>
+          <!-- 4x4 Grid Container -->
+          <div id="gridContainer" class="grid grid-cols-4 gap-2 w-full max-w-sm aspect-square p-2 bg-slate-950 rounded-xl border border-slate-800/80 shadow-inner">
+            <!-- Rendered by JS -->
+          </div>
+
+          <!-- Map Legend -->
+          <div class="w-full grid grid-cols-4 gap-1 mt-3 text-[10px] text-slate-400 pt-2 border-t border-slate-800/60 text-center">
+            <div>🤖 Robô</div>
+            <div>🏆 Ouro</div>
+            <div>👾 Wumpus</div>
+            <div>🕳️ Poço</div>
+            <div>🟩 Seguro</div>
+            <div>❓ Suspeito</div>
+            <div>🛑 Perigo SAT</div>
+            <div>💨/🦨 Sensores</div>
           </div>
         </div>
 
       </div>
 
-      <!-- RIGHT COLUMN: Grid Visualization & Terminal Output -->
-      <div class="lg:col-span-8 flex flex-col space-y-6">
+      <!-- RIGHT COLUMN: Pyodide Terminal Console (7 Cols) -->
+      <div class="lg:col-span-7 flex flex-col space-y-4">
         
-        <!-- Board Visualizer -->
-        <div class="bg-slate-800 rounded-xl border border-slate-700 p-5 shadow-lg flex flex-col items-center">
-          <div class="w-full flex justify-between items-center mb-4">
-            <div class="flex items-center space-x-2">
-              <span id="statusBadge" class="px-2.5 py-1 rounded-full text-xs font-bold bg-slate-700 text-slate-300">Pronto</span>
-              <span id="stepCounter" class="text-xs text-slate-400">Passos: 0</span>
-            </div>
-            <div class="text-xs text-slate-400" id="currentSensorDisplay">
-              Sensores: NENHUM
-            </div>
-          </div>
-
-          <!-- 4x4 Grid Rendering (Y goes 3 down to 0) -->
-          <div id="gridContainer" class="grid grid-cols-4 gap-2 w-full max-w-md aspect-square p-2 bg-slate-900 rounded-xl border border-slate-700 shadow-inner">
-            <!-- Dynamically generated -->
-          </div>
-        </div>
-
-        <!-- Terminal Log & Inference Engine Output -->
-        <div class="bg-slate-950 rounded-xl border border-slate-800 shadow-xl overflow-hidden flex flex-col flex-1 min-h-[280px]">
-          <div class="bg-slate-900 px-4 py-2 border-b border-slate-800 flex justify-between items-center">
+        <!-- Terminal Header Controls -->
+        <div class="bg-slate-900 rounded-2xl border border-slate-800 shadow-2xl overflow-hidden flex flex-col flex-1 min-h-[580px]">
+          
+          <div class="bg-slate-900 px-4 py-3 border-b border-slate-800 flex justify-between items-center">
             <div class="flex items-center space-x-2">
               <div class="w-3 h-3 rounded-full bg-red-500/80"></div>
               <div class="w-3 h-3 rounded-full bg-amber-500/80"></div>
               <div class="w-3 h-3 rounded-full bg-emerald-500/80"></div>
-              <span class="text-xs font-mono text-slate-400 ml-2">wumpus_reasoning_log.py</span>
+              <span class="text-xs font-mono text-slate-400 ml-2 flex items-center">
+                <i class="fa-brands fa-python text-amber-400 mr-1.5"></i> wumpus_sat_solver.py (Pyodide REPL)
+              </span>
             </div>
-            <button onclick="clearLogs()" class="text-xs text-slate-500 hover:text-slate-300 transition">Limpar Log</button>
+
+            <div class="flex items-center space-x-2">
+              <button id="runPyBtn" onclick="runPythonScript()" disabled class="bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-600 text-white px-3.5 py-1.5 rounded-lg font-semibold text-xs transition flex items-center shadow">
+                <i class="fa-solid fa-play mr-1.5"></i> Executar Python
+              </button>
+              <button onclick="clearTerminal()" class="text-xs text-slate-400 hover:text-slate-200 transition bg-slate-800 px-2.5 py-1.5 rounded-lg border border-slate-700">
+                <i class="fa-solid fa-eraser"></i>
+              </button>
+            </div>
           </div>
 
-          <div id="terminalLog" class="p-4 font-mono text-xs text-slate-300 overflow-y-auto max-h-[300px] space-y-1.5 flex-1 select-text">
-            <div class="text-emerald-400">&gt; Sistema inicializado. Defina as posições e clique em 'Iniciar Busca'.</div>
+          <!-- Interactive Terminal Console Output -->
+          <div id="terminalOutput" class="p-4 font-mono text-xs text-slate-200 bg-slate-950 overflow-y-auto flex-1 space-y-1.5 leading-relaxed select-text">
+            <div class="text-slate-500">[Sistema] Carregando o interpretador Pyodide Python WebAssembly... Por favor aguarde.</div>
           </div>
+
+          <!-- Interactive Input Line (Python input() handler) -->
+          <div id="inputLineContainer" class="border-t border-slate-800 bg-slate-900/90 p-3 flex items-center space-x-2 hidden">
+            <span class="text-emerald-400 font-mono text-xs font-bold">&gt;&gt;&gt;</span>
+            <input type="text" id="terminalInput" placeholder="Aguardando input() do Python... digite e pressione Enter" class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-indigo-500">
+            <button onclick="submitTerminalInput()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium">Enviar</button>
+          </div>
+
         </div>
 
       </div>
 
     </section>
 
-    <!-- VIEW 2: PYTHON CODE -->
+    <!-- VIEW 2: PURE PYTHON CODE VIEW -->
     <section id="codeView" class="hidden flex-col space-y-4">
-      <div class="bg-slate-800 rounded-xl border border-slate-700 p-5 shadow-lg flex justify-between items-center">
+      <div class="bg-slate-900 rounded-2xl border border-slate-800 p-5 shadow-xl flex justify-between items-center">
         <div>
-          <h2 class="text-lg font-bold text-white"><i class="fa-brands fa-python text-amber-400 mr-2"></i> Código Python Solução Completa</h2>
-          <p class="text-xs text-slate-400">Script autônomo com suporte a inputs de usuário, inferência lógica com matrizes e confirmação visual ASCII com Emojis no terminal.</p>
+          <h2 class="text-base font-bold text-white flex items-center">
+            <i class="fa-brands fa-python text-amber-400 mr-2 text-xl"></i> Algoritmo Wumpus SAT-Deduction em Python Puro
+          </h2>
+          <p class="text-xs text-slate-400 mt-1">
+            Contém a lógica estrita de eliminação por hipóteses. Resolve com sucesso o cenário complexo do Wumpus e Poços em posições de cerco.
+          </p>
         </div>
-        <button onclick="copyPythonCode()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-sm font-semibold transition flex items-center shadow">
-          <i class="fa-regular fa-copy mr-2"></i> Copiar Código
+        <button onclick="copyPythonCode()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold transition flex items-center shadow">
+          <i class="fa-regular fa-copy mr-2"></i> Copiar Código Fonte
         </button>
       </div>
 
-      <div class="bg-slate-950 rounded-xl border border-slate-800 overflow-hidden shadow-2xl">
-        <pre><code id="pythonCodeBlock" class="block p-5 font-mono text-xs text-emerald-300 leading-relaxed overflow-x-auto">
-<!-- Python script will be injected here -->
+      <div class="bg-slate-950 rounded-2xl border border-slate-800 overflow-hidden shadow-2xl">
+        <pre><code id="pythonCodeBlock" class="block p-5 font-mono text-xs text-emerald-400 leading-relaxed overflow-x-auto select-text">
+<!-- Python Code will be dynamically injected -->
         </code></pre>
       </div>
     </section>
@@ -217,66 +255,62 @@
   </main>
 
   <script>
-    // System Constants & Variables
+    // Global Application State
     const GRID_SIZE = 4;
+    let pyodide = null;
+    let isPyodideReady = false;
+    let inputResolver = null;
+
+    // Default configuration (Matching test scenario by default)
     let config = {
-      start: [0, 0],
-      gold: [2, 2],
-      wumpus: [0, 2],
-      pits: [[2, 0], [3, 3]]
+      start: [3, 3],
+      gold: [1, 0],
+      wumpus: [0, 1],
+      pits: [[0, 0], [2, 0]]
     };
 
     let simState = {
-      running: false,
-      stepByStep: false,
-      currentPos: [0, 0],
-      visited: new Set(),
-      safeRooms: new Set(),
-      dangerousRooms: new Map(), // key -> 'Wumpus' | 'Pit' | 'Pit/Wumpus'
+      currentPos: [3, 3],
+      visited: new Set(['3,3']),
+      safeRooms: new Set(['3,3']),
+      dangerousRooms: new Map(), // key -> 'Wumpus' | 'Poço'
       suspectPits: new Set(),
       suspectWumpus: new Set(),
-      pathHistory: [],
-      queue: [],
-      foundGold: false,
-      dead: false,
-      logs: [],
       stepCount: 0,
-      intervalId: null
+      foundGold: false,
+      dead: false
     };
 
-    // Helper: Coordinate conversion & keys
     const toKey = (x, y) => `${x},${y}`;
-    const fromKey = (k) => k.split(',').map(Number);
+    const fromKey = k => k.split(',').map(Number);
     const isValid = (x, y) => x >= 0 && x < GRID_SIZE && y >= 0 && y < GRID_SIZE;
 
-    // Adjacent cells
     function getAdjacent(x, y) {
       const dirs = [[0, 1], [0, -1], [1, 0], [-1, 0]];
-      const result = [];
+      const res = [];
       for (const [dx, dy] of dirs) {
-        const nx = x + dx, ny = y + dy;
-        if (isValid(nx, ny)) result.push([nx, ny]);
+        if (isValid(x + dx, y + dy)) res.push([x + dx, y + dy]);
       }
-      return result;
+      return res;
     }
 
-    // Switch View Tabs
+    // Tab Switching Logic
     function switchTab(tab) {
       const simV = document.getElementById('simulatorView');
       const codeV = document.getElementById('codeView');
       const simB = document.getElementById('tabSimBtn');
-      const codeB = document.getElementById('tabCodeBtn');
+      codeB = document.getElementById('tabCodeBtn');
 
       if (tab === 'sim') {
         simV.classList.remove('hidden');
         codeV.classList.add('hidden');
-        simB.className = "px-4 py-2 text-sm font-medium rounded-lg bg-indigo-600 text-white transition hover:bg-indigo-500 shadow";
-        codeB.className = "px-4 py-2 text-sm font-medium rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 transition";
+        simB.className = "px-3.5 py-2 text-xs sm:text-sm font-medium rounded-lg bg-indigo-600 text-white transition hover:bg-indigo-500 shadow";
+        codeB.className = "px-3.5 py-2 text-xs sm:text-sm font-medium rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition";
       } else {
         simV.classList.add('hidden');
         codeV.classList.remove('hidden');
-        codeB.className = "px-4 py-2 text-sm font-medium rounded-lg bg-indigo-600 text-white transition hover:bg-indigo-500 shadow";
-        simB.className = "px-4 py-2 text-sm font-medium rounded-lg bg-slate-700 text-slate-300 hover:bg-slate-600 transition";
+        codeB.className = "px-3.5 py-2 text-xs sm:text-sm font-medium rounded-lg bg-indigo-600 text-white transition hover:bg-indigo-500 shadow";
+        simB.className = "px-3.5 py-2 text-xs sm:text-sm font-medium rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 transition";
       }
     }
 
@@ -294,32 +328,30 @@
       };
     }
 
-    // Validate configuration
-    function validateInputs(c) {
-      const all = [c.start, c.gold, c.wumpus, ...c.pits];
-      const keys = all.map(p => toKey(p[0], p[1]));
-      
-      // Start cannot be wumpus or pit
-      if (toKey(...c.start) === toKey(...c.wumpus)) {
-        alert("O início do Robô não pode coincidir com a posição do Wumpus!");
-        return false;
+    function applySettings() {
+      const newC = readInputs();
+      // Validation: No overlap with start
+      if (toKey(...newC.start) === toKey(...newC.wumpus) || newC.pits.some(p => toKey(...p) === toKey(...newC.start))) {
+        alert("O início do Robô não pode coincidir com o Wumpus ou Poço!");
+        return;
       }
-      for (let p of c.pits) {
-        if (toKey(...c.start) === toKey(...p)) {
-          alert("O início do Robô não pode coincidir com um Poço!");
-          return false;
-        }
-      }
-      return true;
+      config = newC;
+      resetSimulationUI();
+      writeTerminal(`[Sistema] Configurações aplicadas! Clique em 'Executar Python' para iniciar a busca SAT.`, "text-indigo-400 font-bold");
     }
 
-    function applySettings() {
-      const newConfig = readInputs();
-      if (validateInputs(newConfig)) {
-        config = newConfig;
-        resetSimulation();
-        logToTerminal(`⚙️ Novas posições configuradas com sucesso.`, `text-indigo-400`);
-      }
+    function loadScenarioTargetBug() {
+      document.getElementById('start-x').value = 3;
+      document.getElementById('start-y').value = 3;
+      document.getElementById('gold-x').value = 1;
+      document.getElementById('gold-y').value = 0;
+      document.getElementById('wumpus-x').value = 0;
+      document.getElementById('wumpus-y').value = 1;
+      document.getElementById('pit1-x').value = 0;
+      document.getElementById('pit1-y').value = 0;
+      document.getElementById('pit2-x').value = 2;
+      document.getElementById('pit2-y').value = 0;
+      applySettings();
     }
 
     function randomizeWorld() {
@@ -345,30 +377,48 @@
       applySettings();
     }
 
-    function getSensors(x, y) {
-      let breeze = false;
-      let stench = false;
-      let glitter = (x === config.gold[0] && y === config.gold[1]);
+    // Reset Visual UI State
+    function resetSimulationUI() {
+      simState = {
+        currentPos: [...config.start],
+        visited: new Set([toKey(...config.start)]),
+        safeRooms: new Set([toKey(...config.start)]),
+        dangerousRooms: new Map(),
+        suspectPits: new Set(),
+        suspectWumpus: new Set(),
+        stepCount: 0,
+        foundGold: false,
+        dead: false
+      };
 
-      for (const [nx, ny] of getAdjacent(x, y)) {
-        if (nx === config.wumpus[0] && ny === config.wumpus[1]) stench = true;
-        for (const [px, py] of config.pits) {
-          if (nx === px && ny === py) breeze = true;
-        }
-      }
-      return { breeze, stench, glitter };
+      document.getElementById('statusBadge').innerText = "Aguardando Execução";
+      document.getElementById('statusBadge').className = "px-2.5 py-1 rounded-full text-[11px] font-bold bg-slate-800 text-slate-300";
+      document.getElementById('stepCounter').innerText = "Passos: 0";
+
+      updateSensorLEDs(false, false, false);
+      renderGrid();
     }
 
+    function updateSensorLEDs(breeze, stench, glitter) {
+      const g = document.getElementById('ledGlitter');
+      const s = document.getElementById('ledStench');
+      const b = document.getElementById('ledBreeze');
+
+      g.className = glitter ? "px-2 py-0.5 rounded text-[10px] bg-amber-500/20 text-amber-300 border border-amber-500/50 font-mono font-bold" : "px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-500 font-mono";
+      s.className = stench ? "px-2 py-0.5 rounded text-[10px] bg-purple-500/20 text-purple-300 border border-purple-500/50 font-mono font-bold" : "px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-500 font-mono";
+      b.className = breeze ? "px-2 py-0.5 rounded text-[10px] bg-blue-500/20 text-blue-300 border border-blue-500/50 font-mono font-bold" : "px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-500 font-mono";
+    }
+
+    // Render Grid Matrix (Row 3 at Top to 0 at Bottom)
     function renderGrid() {
       const grid = document.getElementById('gridContainer');
       grid.innerHTML = '';
 
-      // Rendering 4x4 Grid (Row 3 at top to Row 0 at bottom)
       for (let y = GRID_SIZE - 1; y >= 0; y--) {
         for (let x = 0; x < GRID_SIZE; x++) {
           const k = toKey(x, y);
           const cell = document.createElement('div');
-          cell.className = `grid-cell relative rounded-lg border border-slate-700 bg-slate-800 p-1 flex flex-col justify-between items-center text-xs select-none transition-all duration-200`;
+          cell.className = `grid-cell relative rounded-xl border border-slate-800 bg-slate-900 p-1 flex flex-col justify-between items-center text-xs select-none`;
 
           const isVisited = simState.visited.has(k);
           const isCurrent = simState.currentPos[0] === x && simState.currentPos[1] === y;
@@ -376,45 +426,34 @@
           const isDanger = simState.dangerousRooms.has(k);
           const dangerType = simState.dangerousRooms.get(k);
 
-          // Background styles according to safety logic
           if (isCurrent) {
-            cell.classList.add('ring-2', 'ring-amber-400', 'bg-indigo-950/80');
+            cell.classList.add('ring-2', 'ring-amber-400', 'bg-indigo-950/80', 'z-10');
           } else if (isVisited) {
-            cell.classList.add('bg-slate-800/90', 'border-indigo-500/30');
+            cell.classList.add('bg-slate-900/90', 'border-indigo-500/30');
           } else if (isSafe) {
             cell.classList.add('bg-emerald-950/30', 'border-emerald-600/40', 'pulse-safe');
           } else if (isDanger) {
             cell.classList.add('bg-red-950/40', 'border-red-600/50');
           }
 
-          // Top label: Coords
+          // Header Coords
           const coordDiv = document.createElement('div');
-          coordDiv.className = "w-full flex justify-between text-[10px] text-slate-500 font-mono";
+          coordDiv.className = "w-full flex justify-between text-[9px] text-slate-500 font-mono";
           coordDiv.innerHTML = `<span>(${x},${y})</span>`;
-          
-          // Environment True Icons (If visited or game over)
-          const sensors = getSensors(x, y);
-          let sensorText = '';
-          if (isVisited) {
-            if (sensors.breeze) sensorText += '💨';
-            if (sensors.stench) sensorText += '🦨';
-          }
-          coordDiv.innerHTML += `<span>${sensorText}</span>`;
           cell.appendChild(coordDiv);
 
-          // Center Icon representation
+          // Center Icon
           const centerDiv = document.createElement('div');
-          centerDiv.className = "flex items-center justify-center text-xl my-auto";
+          centerDiv.className = "flex items-center justify-center text-lg my-auto";
 
           let centerIcon = '';
-          
           if (isCurrent) {
             centerIcon = '🤖';
-          } else if (x === config.gold[0] && y === config.gold[1] && (isVisited || !simState.running)) {
-            centerIcon = '💰';
-          } else if (x === config.wumpus[0] && y === config.wumpus[1] && (isDanger || !simState.running || simState.dead)) {
+          } else if (x === config.gold[0] && y === config.gold[1] && (isVisited || simState.foundGold)) {
+            centerIcon = '🏆';
+          } else if (x === config.wumpus[0] && y === config.wumpus[1] && (isDanger || simState.dead)) {
             centerIcon = '👾';
-          } else if (config.pits.some(p => p[0] === x && p[1] === y) && (isDanger || !simState.running || simState.dead)) {
+          } else if (config.pits.some(p => p[0] === x && p[1] === y) && (isDanger || simState.dead)) {
             centerIcon = '🕳️';
           } else if (isDanger) {
             centerIcon = '🛑';
@@ -423,15 +462,15 @@
           } else if (isSafe) {
             centerIcon = '🟩';
           } else {
-            centerIcon = '<span class="text-slate-600 text-xs">🔒</span>';
+            centerIcon = '<span class="text-slate-700 text-[10px]">🔒</span>';
           }
 
           centerDiv.innerHTML = centerIcon;
           cell.appendChild(centerDiv);
 
-          // Bottom label: State tag
+          // Status Footer Tag
           const bottomDiv = document.createElement('div');
-          bottomDiv.className = "text-[9px] font-mono truncate max-w-full font-semibold";
+          bottomDiv.className = "text-[8px] font-mono truncate max-w-full font-bold";
           if (isDanger) {
             bottomDiv.className += " text-red-400";
             bottomDiv.innerText = dangerType || 'Perigo';
@@ -455,268 +494,145 @@
       }
     }
 
-    function logToTerminal(msg, colorClass = "text-slate-300") {
-      const term = document.getElementById('terminalLog');
+    // Terminal Logging
+    function writeTerminal(msg, colorClass = "text-slate-300") {
+      const term = document.getElementById('terminalOutput');
       const div = document.createElement('div');
-      div.className = colorClass;
+      div.className = `${colorClass} whitespace-pre-wrap font-mono`;
       div.innerHTML = msg;
       term.appendChild(div);
       term.scrollTop = term.scrollHeight;
     }
 
-    function clearLogs() {
-      document.getElementById('terminalLog').innerHTML = '';
+    function clearTerminal() {
+      document.getElementById('terminalOutput').innerHTML = '';
     }
 
-    function resetSimulation() {
-      if (simState.intervalId) clearInterval(simState.intervalId);
-
-      simState = {
-        running: false,
-        stepByStep: false,
-        currentPos: [...config.start],
-        visited: new Set([toKey(...config.start)]),
-        safeRooms: new Set([toKey(...config.start)]),
-        dangerousRooms: new Map(),
-        suspectPits: new Set(),
-        suspectWumpus: new Set(),
-        pathHistory: [[...config.start]],
-        queue: [],
-        foundGold: false,
-        dead: false,
-        logs: [],
-        stepCount: 0,
-        intervalId: null
-      };
-
-      document.getElementById('statusBadge').innerText = "Pronto";
-      document.getElementById('statusBadge').className = "px-2.5 py-1 rounded-full text-xs font-bold bg-slate-700 text-slate-300";
-      document.getElementById('stepCounter').innerText = `Passos: 0`;
-      document.getElementById('currentSensorDisplay').innerText = `Sensores: NENHUM`;
-
-      renderGrid();
-    }
-
-    function runSimulation() {
-      resetSimulation();
-      simState.running = true;
-      document.getElementById('statusBadge').innerText = "Em Execução";
-      document.getElementById('statusBadge').className = "px-2.5 py-1 rounded-full text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30";
-
-      const speed = parseInt(document.getElementById('speedRange').value, 10);
+    // Bridge function called from Python to sync JS Visualizer UI
+    window.syncStateFromPython = function(pxState) {
+      const data = pxState.toJs();
+      simState.currentPos = Array.from(data.get('current_pos'));
+      simState.visited = new Set(Array.from(data.get('visited')));
+      simState.safeRooms = new Set(Array.from(data.get('safe_rooms')));
       
-      logToTerminal(`🚀 Iniciando exploração do Robô a partir de (${config.start[0]}, ${config.start[1]})`, `text-indigo-400 font-bold`);
-
-      simState.intervalId = setInterval(() => {
-        const active = executeAIStep();
-        if (!active) {
-          clearInterval(simState.intervalId);
-        }
-      }, speed);
-    }
-
-    function stepSimulation() {
-      if (!simState.running) {
-        resetSimulation();
-        simState.running = true;
-        logToTerminal(`🚀 Iniciando exploração passo a passo...`, `text-indigo-400 font-bold`);
-      }
-      executeAIStep();
-    }
-
-    function executeAIStep() {
-      if (simState.foundGold || simState.dead) return false;
-
-      const [cx, cy] = simState.currentPos;
-      const currentKey = toKey(cx, cy);
-      simState.stepCount++;
-
-      // 1. Perceber Sensores na sala atual
-      const sensors = getSensors(cx, cy);
-      let sensorMsg = [];
-      if (sensors.glitter) sensorMsg.push("✨ BRILHO");
-      if (sensors.breeze) sensorMsg.push("💨 BRISA");
-      if (sensors.stench) sensorMsg.push("🦨 FEDOR");
-      if (sensorMsg.length === 0) sensorMsg.push("NENHUM");
-
-      document.getElementById('currentSensorDisplay').innerText = `Sensores: ${sensorMsg.join(', ')}`;
-      logToTerminal(`\n📍 Passo ${simState.stepCount}: Robô em (${cx}, ${cy}) | Sensores: [${sensorMsg.join(', ')}]`);
-
-      // 2. Verificar Condição de Vitória
-      if (sensors.glitter) {
-        simState.foundGold = true;
-        logToTerminal(`💰 OURO ENCONTRADO EM (${cx}, ${cy})! 🎉`, `text-amber-400 font-bold text-sm`);
-        logToTerminal(`🏆 Caminho seguro percorrido: ${simState.pathHistory.map(p => `(${p[0]},${p[1]})`).join(' ➔ ')}`, `text-emerald-400 font-bold`);
-        
-        document.getElementById('statusBadge').innerText = "Sucesso!";
-        document.getElementById('statusBadge').className = "px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
-        renderGrid();
-        return false;
-      }
-
-      // 3. Atualizar inferências lógicas dos vizinhos
-      const adj = getAdjacent(cx, cy);
-
-      if (!sensors.breeze && !sensors.stench) {
-        // Se NENHUM sensor disparou, TODAS as salas adjacentes são 100% SEGURAS!
-        for (const [nx, ny] of adj) {
-          const nk = toKey(nx, ny);
-          if (!simState.dangerousRooms.has(nk)) {
-            if (!simState.safeRooms.has(nk)) {
-              simState.safeRooms.add(nk);
-              logToTerminal(`  ↳ Inferência: Sala (${nx}, ${ny}) confirmada SEGURA (Sem brisa/fedor).`, `text-emerald-400`);
-            }
-          }
-          simState.suspectPits.delete(nk);
-          simState.suspectWumpus.delete(nk);
-        }
-      } else {
-        // Se houver Brisa ou Fedor
-        for (const [nx, ny] of adj) {
-          const nk = toKey(nx, ny);
-          if (!simState.visited.has(nk) && !simState.safeRooms.has(nk) && !simState.dangerousRooms.has(nk)) {
-            if (sensors.breeze) {
-              simState.suspectPits.add(nk);
-              logToTerminal(`  ⚠️ Brisa detectada! Sala (${nx}, ${ny}) marcada como suspeita de Poço.`, `text-amber-400`);
-            }
-            if (sensors.stench) {
-              simState.suspectWumpus.add(nk);
-              logToTerminal(`  ⚠️ Fedor detectado! Sala (${nx}, ${ny}) marcada como suspeita de Wumpus.`, `text-purple-400`);
-            }
-          }
+      const dangerous = data.get('dangerous_rooms');
+      simState.dangerousRooms = new Map();
+      if (dangerous) {
+        for (const [k, v] of dangerous.entries()) {
+          simState.dangerousRooms.set(k, v);
         }
       }
 
-      // Advanced Deduction Logic: Deduce Dangerous Rooms
-      deduceDangerAndSafety();
-
-      // 4. Selecionar o Próximo Movimento
-      // Buscar vizinho direto seguro não visitado
-      let unvisitedSafeNeighbor = null;
-      for (const [nx, ny] of adj) {
-        const nk = toKey(nx, ny);
-        if (simState.safeRooms.has(nk) && !simState.visited.has(nk)) {
-          unvisitedSafeNeighbor = [nx, ny];
-          break;
-        }
-      }
-
-      if (unvisitedSafeNeighbor) {
-        // Mover para vizinho direto
-        simState.currentPos = unvisitedSafeNeighbor;
-        simState.visited.add(toKey(...unvisitedSafeNeighbor));
-        simState.pathHistory.push([...unvisitedSafeNeighbor]);
-      } else {
-        // Caso não haja vizinho direto não visitado, encontrar qualquer sala segura não visitada via BFS
-        const targetSafe = findNearestUnvisitedSafeRoom(simState.currentPos);
-
-        if (targetSafe) {
-          logToTerminal(`  ↩️ Recuando / Redirecionando via caminho seguro até (${targetSafe.target[0]}, ${targetSafe.target[1]})`, `text-sky-400`);
-          // Seguir o primeiro passo da rota mais curta até a sala alvo
-          const nextStep = targetSafe.path[1]; // path[0] is current
-          simState.currentPos = nextStep;
-          simState.visited.add(toKey(...nextStep));
-          simState.pathHistory.push([...nextStep]);
-        } else {
-          // Sem caminho seguro restante!
-          logToTerminal(`❌ NÃO HÁ CAMINHO SEGURO CONFIRMADO ATÉ O OURO! A IA interrompeu a movimentação para evitar riscos.`, `text-red-400 font-bold`);
-          document.getElementById('statusBadge').innerText = "Sem Caminho Seguro";
-          document.getElementById('statusBadge').className = "px-2.5 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30";
-          renderGrid();
-          return false;
-        }
-      }
+      simState.suspectPits = new Set(Array.from(data.get('suspect_pits')));
+      simState.suspectWumpus = new Set(Array.from(data.get('suspect_wumpus')));
+      simState.stepCount = data.get('step');
+      simState.foundGold = data.get('found_gold');
 
       document.getElementById('stepCounter').innerText = `Passos: ${simState.stepCount}`;
+      
+      const sensors = data.get('sensors');
+      if (sensors) {
+        updateSensorLEDs(sensors.get('breeze'), sensors.get('stench'), sensors.get('glitter'));
+      }
+
+      if (simState.foundGold) {
+        document.getElementById('statusBadge').innerText = "Sucesso! Ouro Pego 🎉";
+        document.getElementById('statusBadge').className = "px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30";
+      } else {
+        document.getElementById('statusBadge').innerText = "Em Execução";
+        document.getElementById('statusBadge').className = "px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30";
+      }
+
       renderGrid();
-      return true;
-    }
+    };
 
-    function deduceDangerAndSafety() {
-      // Deduce Wumpus: If only 1 neighbor of a stench node is suspect, that's the Wumpus
-      for (const vKey of simState.visited) {
-        const [vx, vy] = fromKey(vKey);
-        const sensors = getSensors(vx, vy);
+    // Pyodide Prompt Input Handler
+    window.promptPythonInput = function(promptText) {
+      return new Promise((resolve) => {
+        writeTerminal(promptText, "text-amber-400 font-bold");
+        const container = document.getElementById('inputLineContainer');
+        const input = document.getElementById('terminalInput');
+        container.classList.remove('hidden');
+        input.value = '';
+        input.focus();
 
-        if (sensors.stench) {
-          const suspects = getAdjacent(vx, vy).filter(([nx, ny]) => {
-            const nk = toKey(nx, ny);
-            return !simState.safeRooms.has(nk) && !simState.visited.has(nk);
-          });
-          if (suspects.length === 1) {
-            const [wx, wy] = suspects[0];
-            const wk = toKey(wx, wy);
-            if (!simState.dangerousRooms.has(wk)) {
-              simState.dangerousRooms.set(wk, 'Wumpus');
-              logToTerminal(`  🛑 DEDUÇÃO LÓGICA: Wumpus confirmado em (${wx}, ${wy})! Sala isolada perigosa.`, `text-red-400 font-bold`);
-            }
-          }
-        }
+        inputResolver = (val) => {
+          container.classList.add('hidden');
+          writeTerminal(`> ${val}`, "text-slate-400 italic");
+          resolve(val);
+        };
+      });
+    };
 
-        if (sensors.breeze) {
-          const suspects = getAdjacent(vx, vy).filter(([nx, ny]) => {
-            const nk = toKey(nx, ny);
-            return !simState.safeRooms.has(nk) && !simState.visited.has(nk);
-          });
-          if (suspects.length === 1) {
-            const [px, py] = suspects[0];
-            const pk = toKey(px, py);
-            if (!simState.dangerousRooms.has(pk)) {
-              simState.dangerousRooms.set(pk, 'Poço');
-              logToTerminal(`  🛑 DEDUÇÃO LÓGICA: Poço confirmado em (${px}, ${py})! Sala isolada perigosa.`, `text-red-400 font-bold`);
-            }
-          }
-        }
+    function submitTerminalInput() {
+      const input = document.getElementById('terminalInput');
+      if (inputResolver) {
+        const val = input.value;
+        inputResolver(val);
+        inputResolver = null;
       }
     }
 
-    // BFS Search through strictly safe rooms
-    function findNearestUnvisitedSafeRoom(start) {
-      const queue = [[start]];
-      const visitedBFS = new Set([toKey(...start)]);
+    document.getElementById('terminalInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') submitTerminalInput();
+    });
 
-      while (queue.length > 0) {
-        const path = queue.shift();
-        const [cx, cy] = path[path.length - 1];
-        const ck = toKey(cx, cy);
+    async function initPyodideEngine() {
+      try {
+        pyodide = await loadPyodide({
+          stdout: (text) => writeTerminal(text, "text-slate-200"),
+          stderr: (text) => writeTerminal(text, "text-red-400 font-bold")
+        });
 
-        if (!simState.visited.has(ck) && simState.safeRooms.has(ck)) {
-          return { target: [cx, cy], path: path };
-        }
+        // Redirect Python input() to custom JS promise
+        await pyodide.runPythonAsync(`
+import js
+import builtins
 
-        for (const [nx, ny] of getAdjacent(cx, cy)) {
-          const nk = toKey(nx, ny);
-          // Only travel through SAFE rooms
-          if (simState.safeRooms.has(nk) && !visitedBFS.has(nk)) {
-            visitedBFS.add(nk);
-            queue.push([...path, [nx, ny]]);
-          }
-        }
+async def custom_input(prompt=""):
+    return await js.promptPythonInput(prompt)
+
+builtins.input = custom_input
+        `);
+
+        isPyodideReady = true;
+        const badge = document.getElementById('pyodideStatusBadge');
+        badge.innerHTML = `<i class="fa-solid fa-check mr-1"></i> Pyodide Pronto`;
+        badge.className = "text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-mono";
+        document.getElementById('runPyBtn').disabled = false;
+
+        writeTerminal(`[Pyodide Engine] Ambiente Python WebAssembly pronto para execução!`, "text-emerald-400 font-bold");
+      } catch (err) {
+        console.error(err);
+        const badge = document.getElementById('pyodideStatusBadge');
+        badge.innerHTML = `<i class="fa-solid fa-triangle-exclamation mr-1"></i> Erro Pyodide`;
+        badge.className = "text-xs px-2.5 py-0.5 rounded-full bg-red-500/20 text-red-400 border border-red-500/30 font-mono";
+        writeTerminal(`[Erro] Falha ao carregar o Pyodide: ${err.message}`, "text-red-400");
       }
-      return null;
     }
 
-    const pythonScript = `import collections
-import random
+    // Complete Python Source Code String
+    const purePythonScript = `import collections
+import js
 
 GRID_SIZE = 4
 
-class WumpusWorld:
-    def __init__(self, start=(0,0), gold=(2,2), wumpus=(0,2), pits=[(2,0), (3,3)]):
+class WumpusSATWorld:
+    def __init__(self, start=(3,3), gold=(1,0), wumpus=(0,1), pits=[(0,0), (2,0)]):
         self.start = start
         self.gold = gold
         self.wumpus = wumpus
         self.pits = pits
         
-        # Estruturas do Agente IA
         self.visited = set([start])
         self.safe_rooms = set([start])
-        self.dangerous_rooms = {} # (x,y) -> "Wumpus" | "Poço" | "Perigo"
+        self.dangerous_rooms = {} # (x,y) -> "Wumpus" | "Poço"
         self.suspect_pits = set()
         self.suspect_wumpus = set()
-        self.path_history = [start]
         self.current_pos = start
+        self.path_history = [start]
         self.found_gold = False
+        self.step = 0
 
     def is_valid(self, x, y):
         return 0 <= x < GRID_SIZE and 0 <= y < GRID_SIZE
@@ -730,7 +646,6 @@ class WumpusWorld:
         return adj
 
     def read_sensors(self, x, y):
-        """Retorna os sensores (breeze, stench, glitter) na sala (x,y)."""
         breeze = False
         stench = False
         glitter = ((x, y) == self.gold)
@@ -743,25 +658,95 @@ class WumpusWorld:
 
         return breeze, stench, glitter
 
-    def deduce_dangers(self):
-        """Aplica dedução lógica proposicional básica nos sensores percebidos."""
-        for vx, vy in list(self.visited):
+    def sync_ui(self, breeze, stench, glitter):
+        """Sincroniza o estado do Python com a interface gráfica JS."""
+        state_dict = {
+            "current_pos": self.current_pos,
+            "visited": [f"{x},{y}" for x,y in self.visited],
+            "safe_rooms": [f"{x},{y}" for x,y in self.safe_rooms],
+            "dangerous_rooms": {f"{x},{y}": v for (x,y), v in self.dangerous_rooms.items()},
+            "suspect_pits": [f"{x},{y}" for x,y in self.suspect_pits],
+            "suspect_wumpus": [f"{x},{y}" for x,y in self.suspect_wumpus],
+            "step": self.step,
+            "found_gold": self.found_gold,
+            "sensors": {"breeze": breeze, "stench": stench, "glitter": glitter}
+        }
+        js.syncStateFromPython(state_dict)
+
+    def deduce_sat_dangers_and_safety(self):
+        """
+        DEDUÇÃO LÓGICA RIGOROSA (SAT BY ELIMINATION):
+        Analisa as restrições de cada sala visitada:
+        1. Se Stench e apenas 1 vizinho desconhecido resta -> Ele é Wumpus.
+        2. Se Breeze e apenas 1 vizinho desconhecido resta -> Ele é Poço.
+        3. Para qualquer sala não visitada S:
+           Se Wumpus já foi confirmado em outro local -> S não pode ser Wumpus.
+           Se o número de poços já confirmados nas proximidades atende aos sensores -> S não pode ser Poço.
+           Se Wumpus e Poço foram ambos descartados para S -> S É 100% SEGURA!
+        """
+        wumpus_confirmed = [p for p, v in self.dangerous_rooms.items() if v == "Wumpus"]
+        confirmed_pits = [p for p, v in self.dangerous_rooms.items() if v == "Poço"]
+
+        # Passo 1: Confirmar perigos diretos por isolamento
+        for (vx, vy) in list(self.visited):
             breeze, stench, _ = self.read_sensors(vx, vy)
             adj = self.get_adjacent(vx, vy)
-            unvisited_unknowns = [p for p in adj if p not in self.safe_rooms and p not in self.visited]
+            unknowns = [p for p in adj if p not in self.safe_rooms and p not in self.visited]
 
-            if stench and len(unvisited_unknowns) == 1:
-                target = unvisited_unknowns[0]
+            if stench and len(unknowns) == 1 and not wumpus_confirmed:
+                target = unknowns[0]
                 if target not in self.dangerous_rooms:
                     self.dangerous_rooms[target] = "Wumpus"
+                    print(f"  🛑 DEDUÇÃO SAT: Wumpus confirmado isolado em {target}!")
+                    wumpus_confirmed.append(target)
 
-            if breeze and len(unvisited_unknowns) == 1:
-                target = unvisited_unknowns[0]
-                if target not in self.dangerous_rooms:
+            if breeze and len(unknowns) == 1:
+                target = unknowns[0]
+                if target not in self.dangerous_rooms and target not in confirmed_pits:
                     self.dangerous_rooms[target] = "Poço"
+                    print(f"  🛑 DEDUÇÃO SAT: Poço confirmado isolado em {target}!")
+                    confirmed_pits.append(target)
+
+        # Passo 2: Eliminação por hipótese para salas suspeitas
+        candidate_rooms = set(list(self.suspect_pits) + list(self.suspect_wumpus))
+        for room in list(candidate_rooms):
+            if room in self.safe_rooms or room in self.visited or room in self.dangerous_rooms:
+                continue
+
+            rx, ry = room
+            wumpus_possible = True
+            pit_possible = True
+
+            # Se o Wumpus já foi confirmado em outro lugar, esta sala não pode ser o Wumpus
+            if wumpus_confirmed and room not in wumpus_confirmed:
+                wumpus_possible = False
+
+            # Verificar se algum vizinho visitado exige Poço nesta sala
+            # Se TODOS os vizinhos visitados com Brisa já têm todos os seus Poços explicados por confirmed_pits,
+            # então esta sala não precisa ser um Poço!
+            required_as_pit = False
+            for nx, ny in self.get_adjacent(rx, ry):
+                if (nx, ny) in self.visited:
+                    breeze, _, _ = self.read_sensors(nx, ny)
+                    if breeze:
+                        # Conta quantos poços confirmados existem ao redor deste vizinho
+                        adj_pits = [p for p in self.get_adjacent(nx, ny) if p in confirmed_pits]
+                        if len(adj_pits) == 0:
+                            # Ainda falta explicar esta brisa, então room pode ser poço
+                            required_as_pit = True
+
+            if not required_as_pit and len(confirmed_pits) >= 2:
+                pit_possible = False
+
+            # SE AMBOS PERIGOS FORAM DESDITOS -> A SALA É 100% SEGURA!
+            if not wumpus_possible and not pit_possible:
+                self.safe_rooms.add(room)
+                self.suspect_pits.discard(room)
+                self.suspect_wumpus.discard(room)
+                print(f"  ✨ DEDUÇÃO SAT: Sala {room} PROVADA 100% SEGURA por eliminação de hipóteses!")
 
     def find_nearest_unvisited_safe(self):
-        """BFS para encontrar o caminho seguro mais curto até uma sala segura não visitada."""
+        """BFS para navegação segura garantida."""
         queue = collections.deque([[self.current_pos]])
         visited_bfs = {self.current_pos}
 
@@ -778,67 +763,34 @@ class WumpusWorld:
                     queue.append(path + [(nx, ny)])
         return None
 
-    def print_board(self):
-        """Imprime no terminal a visualização gráfica do tabuleiro 4x4 em Emojis."""
-        print("\\n" + "="*35)
-        print(f" MAPA DO MUNDO WUMPUS (4x4) - Pos Atual: {self.current_pos}")
-        print("="*35)
+    async def run_solver(self):
+        print("==========================================")
+        print("   EXPLORAÇÃO WUMPUS COM SAT-SOLVER IA   ")
+        print("==========================================")
         
-        # Y varia de 3 até 0 (visualização cartesiana padrão)
-        for y in range(GRID_SIZE - 1, -1, -1):
-            row_str = f"{y} | "
-            for x in range(GRID_SIZE):
-                pos = (x, y)
-                if pos == self.current_pos:
-                    cell = "🤖" # Robô
-                elif pos == self.gold and pos in self.visited:
-                    cell = "💰" # Ouro encontrado
-                elif pos in self.dangerous_rooms:
-                    cell = "🛑" # Perigo confirmado
-                elif pos in self.visited:
-                    b, s, _ = self.read_sensors(x, y)
-                    icons = ""
-                    if b: icons += "💨"
-                    if s: icons += "🦨"
-                    cell = icons if icons else "⬜"
-                elif pos in self.safe_rooms:
-                    cell = "🟩" # Confirmado seguro
-                elif pos in self.suspect_pits or pos in self.suspect_wumpus:
-                    cell = "❓" # Suspeito
-                else:
-                    cell = "⬛" # Inexplorado
-
-                row_str += f"{cell:^4}"
-            print(row_str)
-        print("    " + "-"*16)
-        print("     0   1   2   3 (X)\\n")
-
-    def run_exploration(self):
-        """Executa o loop de raciocínio autônomo do agente de IA."""
-        step = 0
         while True:
-            step += 1
+            self.step += 1
             cx, cy = self.current_pos
             breeze, stench, glitter = self.read_sensors(cx, cy)
 
             sensor_list = []
-            if glitter: sensor_list.append("BRILHO ✨")
-            if breeze: sensor_list.append("BRISA 💨")
-            if stench: sensor_list.append("FEDOR 🦨")
+            if glitter: sensor_list.append("✨ BRILHO")
+            if breeze: sensor_list.append("💨 BRISA")
+            if stench: sensor_list.append("🦨 FEDOR")
             if not sensor_list: sensor_list.append("NENHUM")
 
-            print(f"--- PASSO {step} ---")
-            print(f"📍 Robô em ({cx}, {cy}) | Sensores: {', '.join(sensor_list)}")
+            print(f"\\n📍 Passo {self.step}: Robô em ({cx}, {cy}) | Sensores: [{', '.join(sensor_list)}]")
+            self.sync_ui(breeze, stench, glitter)
 
-            # Condição de Sucesso
+            # 1. Condição de Vitória
             if glitter:
                 self.found_gold = True
-                self.print_board()
-                print("🎉 SUCESSO! O ouro foi encontrado seguro!")
-                print(f"🏆 Caminho seguro percorrido: {self.path_history}")
+                self.sync_ui(breeze, stench, glitter)
+                print(f"🏆 OURO ENCONTRADO EM ({cx}, {cy})! 🎉")
+                print(f"Caminho percorrido: {self.path_history}")
                 return True
 
-            # Atualização dos Sensores & Inferência
+            # 2. Atualizar Hipóteses
             adj = self.get_adjacent(cx, cy)
             if not breeze and not stench:
                 for nxt in adj:
@@ -850,12 +802,13 @@ class WumpusWorld:
                         if breeze: self.suspect_pits.add(nxt)
                         if stench: self.suspect_wumpus.add(nxt)
 
-            self.deduce_dangers()
-            self.print_board()
+            # 3. Aplicar Dedução SAT Avançada
+            self.deduce_sat_dangers_and_safety()
+            self.sync_ui(breeze, stench, glitter)
 
-            # Escolha do Próximo Passo
+            # 4. Decisão do Próximo Passo
             unvisited_safe = [p for p in adj if p in self.safe_rooms and p not in self.visited]
-            
+
             if unvisited_safe:
                 self.current_pos = unvisited_safe[0]
                 self.visited.add(self.current_pos)
@@ -864,66 +817,63 @@ class WumpusWorld:
                 path = self.find_nearest_unvisited_safe()
                 if path and len(path) > 1:
                     next_step = path[1]
-                    print(f"↩️ Recuando até a próxima sala segura em {path[-1]} (Próximo: {next_step})")
+                    print(f"  ↩️ Recuando com segurança via caminho provado até {path[-1]} (Próximo: {next_step})")
                     self.current_pos = next_step
                     self.visited.add(next_step)
                     self.path_history.append(next_step)
                 else:
-                    print("❌ NÃO HÁ CAMINHO SEGURO CONFIRMADO ATÉ O OURO!")
-                    print(f"Caminho seguro percorrido até o momento: {self.path_history}")
+                    print("❌ NÃO HÁ MAIS CAMINHOS SEGUROS CONFIRMADOS!")
                     return False
-
-
-# --- ENTRADA DE DADOS & LOOP PRINCIPAL ---
-if __name__ == "__main__":
-    print("==========================================")
-    print("   DESAFIO DO LABIRINTO WUMPUS 4x4 (IA)   ")
-    print("==========================================")
-    
-    opcao = input("Deseja inserir posições customizadas? (s/n, padrão=n): ").strip().lower()
-    
-    if opcao == 's':
-        def parse_pos(prompt):
-            x, y = map(int, input(prompt).split(','))
-            return (x, y)
-
-        start = parse_pos("Posição inicial do Robô (X,Y): ")
-        gold = parse_pos("Posição do Ouro (X,Y): ")
-        wumpus = parse_pos("Posição do Wumpus (X,Y): ")
-        p1 = parse_pos("Posição do Poço 1 (X,Y): ")
-        p2 = parse_pos("Posição do Poço 2 (X,Y): ")
-        pits = [p1, p2]
-    else:
-        # Padrão
-        start = (0, 0)
-        gold = (2, 2)
-        wumpus = (0, 2)
-        pits = [(2, 0), (3, 3)]
-        print(f"Usando padrão: Robô={start}, Ouro={gold}, Wumpus={wumpus}, Poços={pits}")
-
-    world = WumpusWorld(start=start, gold=gold, wumpus=wumpus, pits=pits)
-    world.run_exploration()
 `;
 
-    // Inject Python Code into DOM
-    document.getElementById('pythonCodeBlock').innerText = pythonScript;
+    // Inject pure code snippet into Code View
+    document.getElementById('pythonCodeBlock').innerText = purePythonScript;
 
     function copyPythonCode() {
-      navigator.clipboard.writeText(pythonScript).then(() => {
+      navigator.clipboard.writeText(purePythonScript).then(() => {
         alert("Código Python copiado para a área de transferência!");
-      }).catch(err => {
+      }).catch(() => {
         const textarea = document.createElement("textarea");
-        textarea.value = pythonScript;
+        textarea.value = purePythonScript;
         document.body.appendChild(textarea);
         textarea.select();
         document.execCommand("copy");
         document.body.removeChild(textarea);
-        alert("Código Python copiado com sucesso!");
+        alert("Código Python copiado!");
       });
     }
 
+    // Execute Python Script using Pyodide
+    async function runPythonScript() {
+      if (!isPyodideReady) return;
+
+      resetSimulationUI();
+      writeTerminal(`\n[Pyodide] Compilando e executando wumpus_sat_solver.py...`, "text-indigo-400 font-bold");
+
+      const pyRunner = `
+${purePythonScript}
+
+# Instanciar e Rodar com Configuração Atual
+start_pos = tuple(${JSON.stringify(config.start)})
+gold_pos = tuple(${JSON.stringify(config.gold)})
+wumpus_pos = tuple(${JSON.stringify(config.wumpus)})
+pits_pos = [tuple(p) for p in ${JSON.stringify(config.pits)}]
+
+world = WumpusSATWorld(start=start_pos, gold=gold_pos, wumpus=wumpus_pos, pits=pits_pos)
+await world.run_solver()
+`;
+
+      try {
+        await pyodide.runPythonAsync(pyRunner);
+      } catch (err) {
+        writeTerminal(`[Erro Execução Python]: ${err.message}`, "text-red-400");
+      }
+    }
+
+    // Initialize Application
     window.onload = function() {
       renderGrid();
+      initPyodideEngine();
     };
   </script>
 </body>

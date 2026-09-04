@@ -1,0 +1,11 @@
+# Coordenadas:
+
+## Primeira - foi identificado que era necessário identificar e marcar 
+casas de possíveis perigos, separando o que era possivelmente wumpus e o que era poço:
+
+Robô inicial: (3,3) 
+Ouro: (1,0) 
+Wumpus: (0,1) 
+Poço 1: (0,0) 
+Poço 2: (2,0) 
+

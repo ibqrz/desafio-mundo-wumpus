@@ -1,209 +1,282 @@
-## Labirinto Wumpus
-
-import collections
 import random
+from collections import deque
 
-GRID_SIZE = 4
+class MundoWumpus:
+    def __init__(self, pos_robo, pos_ouro, pos_wumpus, pocos):
+        self.tamanho = 4
+        self.pos_robo = pos_robo
+        self.pos_ouro = pos_ouro
+        self.pos_wumpus = pos_wumpus
+        self.pocos = pocos
 
-class WumpusWorld:
-    def __init__(self, start=(0,0), golsd=(2,2), wumpus=(0,2), pits=[(2,0), (3,3)]):
-        self.start = start
-        self.gold = gold
-        self.wumpus = wumpus
-        self.pits = pits
+        # Matriz de Conhecimento:
+        # '?'  = Desconhecido
+        # 'OK' = Seguro
+        # '?W' = Possível Wumpus
+        # '?P' = Possível Poço
+        # 'W'  = Wumpus Confirmado
+        # 'P'  = Poço Confirmado
+        self.conhecimento = [['?' for _ in range(4)] for _ in range(4)]
+        self.visitadas = set()
         
-        # Estruturas do Agente IA
-        self.visited = set([start])
-        self.safe_rooms = set([start])
-        self.dangerous_rooms = {} # (x,y) -> "Wumpus" | "Poço" | "Perigo"
-        self.suspect_pits = set()
-        self.suspect_wumpus = set()
-        self.path_history = [start]
-        self.current_pos = start
-        self.found_gold = False
+        # Histórico de leituras por posição: (x, y) -> {'fedor': bool, 'brisa': bool}
+        self.historico_leituras = {}
 
-    def is_valid(self, x, y):
-        return 0 <= x < GRID_SIZE and 0 <= y < GRID_SIZE
+        # A posição inicial é 100% segura
+        self.conhecimento[pos_robo[1]][pos_robo[0]] = 'OK'
 
-    def get_adjacent(self, x, y):
-        adj = []
-        for dx, dy in [(-1,0), (1,0), (0,-1), (0,1)]:
+    def eh_valida(self, x, y):
+        return 0 <= x < 4 and 0 <= y < 4
+
+    def get_vizinhos(self, x, y):
+        vizs = []
+        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
             nx, ny = x + dx, y + dy
-            if self.is_valid(nx, ny):
-                adj.append((nx, ny))
-        return adj
+            if self.eh_valida(nx, ny):
+                vizs.append((nx, ny))
+        return vizs
 
-    def read_sensors(self, x, y):
-        """Retorna os sensores (breeze, stench, glitter) na sala (x,y)."""
-        breeze = False
-        stench = False
-        glitter = ((x, y) == self.gold)
+    def ler_sensores(self, x, y):
+        fedor = any(v == self.pos_wumpus for v in self.get_vizinhos(x, y))
+        brisa = any(v in self.pocos for v in self.get_vizinhos(x, y))
+        brilho = (x, y) == self.pos_ouro
+        return fedor, brisa, brilho
 
-        for nx, ny in self.get_adjacent(x, y):
-            if (nx, ny) == self.wumpus:
-                stench = True
-            if (nx, ny) in self.pits:
-                breeze = True
+    def inferir_logica(self):
+        mudou = True
+        while mudou:
+            mudou = False
 
-        return breeze, stench, glitter
+            # 1. Salas visitadas são sempre 'OK'
+            for (lx, ly) in self.historico_leituras.keys():
+                if self.conhecimento[ly][lx] != 'OK':
+                    self.conhecimento[ly][lx] = 'OK'
+                    mudou = True
 
-    def deduce_dangers(self):
-        """Aplica dedução lógica proposicional básica nos sensores percebidos."""
-        for vx, vy in list(self.visited):
-            breeze, stench, _ = self.read_sensors(vx, vy)
-            adj = self.get_adjacent(vx, vy)
-            unvisited_unknowns = [p for p in adj if p not in self.safe_rooms and p not in self.visited]
+            # Check: Já temos um Wumpus confirmado no mapa?
+            wumpus_encontrado = any(
+                self.conhecimento[y][x] == 'W' 
+                for y in range(4) for x in range(4)
+            )
 
-            if stench and len(unvisited_unknowns) == 1:
-                target = unvisited_unknowns[0]
-                if target not in self.dangerous_rooms:
-                    self.dangerous_rooms[target] = "Wumpus"
+            # 2. Análise de cada célula para eliminar riscos ou registrar suspeitas
+            for y in range(4):
+                for x in range(4):
+                    if self.conhecimento[y][x] in ['OK', 'W', 'P']:
+                        continue
 
-            if breeze and len(unvisited_unknowns) == 1:
-                target = unvisited_unknowns[0]
-                if target not in self.dangerous_rooms:
-                    self.dangerous_rooms[target] = "Poço"
+                    pode_ser_wumpus = not wumpus_encontrado
+                    pode_ser_poco = True
 
-    def find_nearest_unvisited_safe(self):
-        """BFS para encontrar o caminho seguro mais curto até uma sala segura não visitada."""
-        queue = collections.deque([[self.current_pos]])
-        visited_bfs = {self.current_pos}
+                    for (lx, ly), s in self.historico_leituras.items():
+                        if (x, y) in self.get_vizinhos(lx, ly):
+                            if not s['fedor']:
+                                pode_ser_wumpus = False
+                            if not s['brisa']:
+                                pode_ser_poco = False
+
+                    # Se não pode ser Wumpus nem Poço -> Torna-se SEGURA
+                    if not pode_ser_wumpus and not pode_ser_poco:
+                        if self.conhecimento[y][x] != 'OK':
+                            self.conhecimento[y][x] = 'OK'
+                            mudou = True
+                    elif pode_ser_wumpus and not pode_ser_poco:
+                        if self.conhecimento[y][x] != '?W':
+                            self.conhecimento[y][x] = '?W'
+                            mudou = True
+                    elif pode_ser_poco and not pode_ser_wumpus:
+                        if self.conhecimento[y][x] != '?P':
+                            self.conhecimento[y][x] = '?P'
+                            mudou = True
+
+            # 3. Dedução de Certeza do Wumpus por Unicidade / Interseção
+            if not wumpus_encontrado:
+                for (lx, ly), s in self.historico_leituras.items():
+                    if s['fedor']:
+                        candidatos = []
+                        for vx, vy in self.get_vizinhos(lx, ly):
+                            if self.conhecimento[vy][vx] not in ['OK', 'P']:
+                                descartado = False
+                                for (olx, oly), os in self.historico_leituras.items():
+                                    if (vx, vy) in self.get_vizinhos(olx, oly) and not os['fedor']:
+                                        descartado = True
+                                        break
+                                if not descartado:
+                                    candidatos.append((vx, vy))
+
+                        if len(candidatos) == 1:
+                            wx, wy = candidatos[0]
+                            self.conhecimento[wy][wx] = 'W'
+                            # Limpa qualquer suspeita de Wumpus residual no resto do mapa
+                            for cy in range(4):
+                                for cx in range(4):
+                                    if (cx, cy) != (wx, wy) and self.conhecimento[cy][cx] == '?W':
+                                        self.conhecimento[cy][cx] = '?'
+                            mudou = True
+                            break
+
+            # 4. Dedução de Certeza de Poço por Unicidade
+            for (lx, ly), s in self.historico_leituras.items():
+                if s['brisa']:
+                    candidatos = []
+                    for vx, vy in self.get_vizinhos(lx, ly):
+                        if self.conhecimento[vy][vx] not in ['OK', 'W']:
+                            descartado = False
+                            for (olx, oly), os in self.historico_leituras.items():
+                                if (vx, vy) in self.get_vizinhos(olx, oly) and not os['brisa']:
+                                    descartado = True
+                                    break
+                            if not descartado:
+                                candidatos.append((vx, vy))
+
+                    if len(candidatos) == 1:
+                        px, py = candidatos[0]
+                        if self.conhecimento[py][px] != 'P':
+                            self.conhecimento[py][px] = 'P'
+                            mudou = True
+
+    def rota_segura_bfs(self, inicio, destino):
+        queue = deque([[inicio]])
+        visitados = {inicio}
 
         while queue:
-            path = queue.popleft()
-            cx, cy = path[-1]
+            caminho = queue.popleft()
+            atual = caminho[-1]
 
-            if (cx, cy) in self.safe_rooms and (cx, cy) not in self.visited:
-                return path
+            if atual == destino:
+                return caminho
 
-            for nx, ny in self.get_adjacent(cx, cy):
-                if (nx, ny) in self.safe_rooms and (nx, ny) not in visited_bfs:
-                    visited_bfs.add((nx, ny))
-                    queue.append(path + [(nx, ny)])
+            for vx, vy in self.get_vizinhos(atual[0], atual[1]):
+                if (vx, vy) not in visitados:
+                    if self.conhecimento[vy][vx] == 'OK':
+                        visitados.add((vx, vy))
+                        queue.append(caminho + [(vx, vy)])
         return None
 
-    def print_board(self):
-        """Imprime no terminal a visualização gráfica do tabuleiro 4x4 em Emojis."""
-        print("\n" + "="*35)
-        print(f" MAPA DO MUNDO WUMPUS (4x4) - Pos Atual: {self.current_pos}")
-        print("="*35)
-        
-        # Y varia de 3 até 0 (visualização cartesiana padrão)
-        for y in range(GRID_SIZE - 1, -1, -1):
-            row_str = f"{y} | "
-            for x in range(GRID_SIZE):
-                pos = (x, y)
-                if pos == self.current_pos:
-                    cell = "🤖" # Robô
-                elif pos == self.gold and pos in self.visited:
-                    cell = "💰" # Ouro encontrado
-                elif pos in self.dangerous_rooms:
-                    cell = "🛑" # Perigo confirmado
-                elif pos in self.visited:
-                    b, s, _ = self.read_sensors(x, y)
-                    icons = ""
-                    if b: icons += "💨"
-                    if s: icons += "🦨"
-                    cell = icons if icons else "⬜"
-                elif pos in self.safe_rooms:
-                    cell = "🟩" # Confirmado seguro
-                elif pos in self.suspect_pits or pos in self.suspect_wumpus:
-                    cell = "❓" # Suspeito
+    def exibir_mapa(self, pos_atual):
+        print("\n===================================")
+        print(f" MAPA DO MUNDO WUMPUS (4x4) - Pos Atual: {pos_atual}")
+        print("===================================")
+        for y in range(3, -1, -1):
+            linha = f"{y} | "
+            for x in range(4):
+                if (x, y) == pos_atual:
+                    linha += "🤖 "
+                elif self.conhecimento[y][x] == 'W':
+                    linha += "🦨 "  # Wumpus Confirmado
+                elif self.conhecimento[y][x] == 'P':
+                    linha += "🛑 "  # Poço Confirmado
+                elif self.conhecimento[y][x] == '?W':
+                    linha += "🟡 "  # Possível Wumpus (Suspeita)
+                elif self.conhecimento[y][x] == '?P':
+                    linha += "🔵 "  # Possível Poço (Suspeita)
+                elif self.conhecimento[y][x] == 'OK':
+                    if (x, y) in self.visitadas:
+                        linha += "🟩 "  # Seguro e Visitado
+                    else:
+                        linha += "🟢 "  # Seguro e Não Visitado
                 else:
-                    cell = "⬛" # Inexplorado
+                    linha += "⬛ "  # Desconhecido
+            print(linha)
+        print("    ----------------")
+        print("     0  1  2  3 (X)\n")
 
-                row_str += f"{cell:^4}"
-            print(row_str)
-        print("    " + "-"*16)
-        print("     0   1   2   3 (X)\n")
+    def executar(self):
+        pos_atual = self.pos_robo
+        caminho_total = [pos_atual]
+        passo = 1
 
-    def run_exploration(self):
-        """Executa o loop de raciocínio autônomo do agente de IA."""
-        step = 0
         while True:
-            step += 1
-            cx, cy = self.current_pos
-            breeze, stench, glitter = self.read_sensors(cx, cy)
+            self.visitadas.add(pos_atual)
+            fedor, brisa, brilho = self.ler_sensores(pos_atual[0], pos_atual[1])
 
-            sensor_list = []
-            if glitter: sensor_list.append("BRILHO ✨")
-            if breeze: sensor_list.append("BRISA 💨")
-            if stench: sensor_list.append("FEDOR 🦨")
-            if not sensor_list: sensor_list.append("NENHUM")
+            self.historico_leituras[pos_atual] = {'fedor': fedor, 'brisa': brisa}
+            self.inferir_logica()
 
-            print(f"--- PASSO {step} ---")
-            print(f"📍 Robô em ({cx}, {cy}) | Sensores: {', '.join(sensor_list)}")
+            sensores = []
+            if fedor: sensores.append("FEDOR 🦨")
+            if brisa: sensores.append("BRISA 💨")
+            if brilho: sensores.append("BRILHO ✨ (OURO ENCONTRADO!)")
 
-            # Condição de Sucesso
-            if glitter:
-                self.found_gold = True
-                self.print_board()
-                print("🎉 SUCESSO! O ouro foi encontrado seguro!")
-                print(f"🏆 Caminho seguro percorrido: {self.path_history}")
-                return True
+            txt_sensores = ", ".join(sensores) if sensores else "NENHUM"
+            print(f"--- PASSO {passo} ---")
+            print(f"📍 Robô em {pos_atual} | Sensores: {txt_sensores}")
+            self.exibir_mapa(pos_atual)
 
-            # Atualização dos Sensores & Inferência
-            adj = self.get_adjacent(cx, cy)
-            if not breeze and not stench:
-                for nxt in adj:
-                    if nxt not in self.dangerous_rooms:
-                        self.safe_rooms.add(nxt)
-            else:
-                for nxt in adj:
-                    if nxt not in self.visited and nxt not in self.safe_rooms:
-                        if breeze: self.suspect_pits.add(nxt)
-                        if stench: self.suspect_wumpus.add(nxt)
+            if brilho:
+                print("🎉 SUCESSO! O Robô encontrou o Pote de Ouro com segurança!")
+                break
 
-            self.deduce_dangers()
-            self.print_board()
+            objetivos = []
+            for y in range(4):
+                for x in range(4):
+                    if self.conhecimento[y][x] == 'OK' and (x, y) not in self.visitadas:
+                        objetivos.append((x, y))
 
-            # Escolha do Próximo Passo
-            unvisited_safe = [p for p in adj if p in self.safe_rooms and p not in self.visited]
-            
-            if unvisited_safe:
-                self.current_pos = unvisited_safe[0]
-                self.visited.add(self.current_pos)
-                self.path_history.append(self.current_pos)
-            else:
-                path = self.find_nearest_unvisited_safe()
-                if path and len(path) > 1:
-                    next_step = path[1]
-                    print(f"↩️ Recuando até a próxima sala segura em {path[-1]} (Próximo: {next_step})")
-                    self.current_pos = next_step
-                    self.visited.add(next_step)
-                    self.path_history.append(next_step)
-                else:
-                    print("❌ NÃO HÁ CAMINHO SEGURO CONFIRMADO ATÉ O OURO!")
-                    print(f"Caminho seguro percorrido até o momento: {self.path_history}")
-                    return False
+            if not objetivos:
+                print("❌ NÃO HÁ CAMINHO SEGURO CONFIRMADO ATÉ O OURO!")
+                print("A IA interrompeu a movimentação para evitar riscos de falha/morte.")
+                break
+
+            melhor_rota = None
+            for obj in objetivos:
+                rota = self.rota_segura_bfs(pos_atual, obj)
+                if rota:
+                    if melhor_rota is None or len(rota) < len(melhor_rota):
+                        melhor_rota = rota
+
+            if not melhor_rota or len(melhor_rota) < 2:
+                print("❌ Não foi possível traçar uma rota segura.")
+                break
+
+            pos_atual = melhor_rota[1]
+            caminho_total.append(pos_atual)
+            passo += 1
+
+        print("\n==================================================")
+        print("CAMINHO PERCORRIDO PELO ROBÔ:")
+        print(" -> ".join([str(p) for p in caminho_total]))
+        print("==================================================")
 
 
-# --- ENTRADA DE DADOS & LOOP PRINCIPAL ---
-if __name__ == "__main__":
+# --- LEITURA E INICIALIZAÇÃO ---
+
+def ler_coordenada(msg):
+    while True:
+        try:
+            val = input(msg).strip()
+            x, y = map(int, val.split(','))
+            if 0 <= x < 4 and 0 <= y < 4:
+                return (x, y)
+            print("⚠️ Digite coordenadas entre 0 e 3.")
+        except ValueError:
+            print("⚠️ Formato inválido! Use X,Y.")
+
+def main():
     print("==========================================")
     print("   DESAFIO DO LABIRINTO WUMPUS 4x4 (IA)   ")
     print("==========================================")
+    print("Escolha o modo de inicialização:")
+    print("1 - Inserir posições customizadas")
+    print("2 - Gerar posições aleatórias")
     
-    opcao = input("Deseja inserir posições customizadas? (s/n, padrão=n): ").strip().lower()
+    opcao = input("Opção (1/2, padrão=2): ").strip()
     
-    if opcao == 's':
-        def parse_pos(prompt):
-            x, y = map(int, input(prompt).split(','))
-            return (x, y)
-
-        start = parse_pos("Posição inicial do Robô (X,Y): ")
-        gold = parse_pos("Posição do Ouro (X,Y): ")
-        wumpus = parse_pos("Posição do Wumpus (X,Y): ")
-        p1 = parse_pos("Posição do Poço 1 (X,Y): ")
-        p2 = parse_pos("Posição do Poço 2 (X,Y): ")
-        pits = [p1, p2]
+    if opcao == "1":
+        print("\nDigite as coordenadas no formato X,Y (valores de 0 a 3):")
+        pos_robo = ler_coordenada("Posição Inicial do Robô (X,Y): ")
+        pos_ouro = ler_coordenada("Posição do Ouro (X,Y): ")
+        pos_wumpus = ler_coordenada("Posição do Wumpus (X,Y): ")
+        poco1 = ler_coordenada("Posição do Poço 1 (X,Y): ")
+        poco2 = ler_coordenada("Posição do Poço 2 (X,Y): ")
+        pocos = [poco1, poco2]
     else:
-        # Padrão
-        start = (0, 0)
-        gold = (2, 2)
-        wumpus = (0, 2)
-        pits = [(2, 0), (3, 3)]
-        print(f"Usando padrão: Robô={start}, Ouro={gold}, Wumpus={wumpus}, Poços={pits}")
+        pos = random.sample([(x, y) for x in range(4) for y in range(4)], 5)
+        pos_robo, pos_ouro, pos_wumpus = pos[0], pos[1], pos[2]
+        pocos = [pos[3], pos[4]]
 
-    world = WumpusWorld(start=start, gold=gold, wumpus=wumpus, pits=pits)
-    world.run_exploration()
+    jogo = MundoWumpus(pos_robo, pos_ouro, pos_wumpus, pocos)
+    jogo.executar()
+
+if __name__ == "__main__":
+    main()
