@@ -1,4 +1,5 @@
 import collections
+import itertools
 import random
 import time
 
@@ -7,15 +8,15 @@ class WumpusWorld:
 
     def __init__(self, start=None, gold=None, wumpus=None, pits=None):
         self.grid_size = 4
+        # Coordenadas tratadas como (X, Y) -> (Coluna, Linha)
         self.all_coords = [
-            (r, c)
-            for r in range(self.grid_size)
-            for c in range(self.grid_size)
+            (x, y)
+            for x in range(self.grid_size)
+            for y in range(self.grid_size)
         ]
 
         self.setup_board(start, gold, wumpus, pits)
 
-        # Estado do conhecimento lógico do Robô para cada célula
         # Status de Poço: 'CONFIRMED', 'POSSIBLE', 'NO'
         self.pit_status = {cell: "POSSIBLE" for cell in self.all_coords}
         # Status de Wumpus: 'CONFIRMED', 'POSSIBLE', 'NO'
@@ -60,12 +61,13 @@ class WumpusWorld:
             self.pits = set(tuple(p) for p in pits[:2])
 
     def get_adjacent(self, cell):
-        r, c = cell
+        x, y = cell
         adj = []
-        for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-            nr, nc = r + dr, c + dc
-            if 0 <= nr < self.grid_size and 0 <= nc < self.grid_size:
-                adj.append((nr, nc))
+        # Deslocamentos em (dX, dY)
+        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < self.grid_size and 0 <= ny < self.grid_size:
+                adj.append((nx, ny))
         return adj
 
     def read_sensors(self, cell):
@@ -75,9 +77,6 @@ class WumpusWorld:
         glitter = cell == self.gold_pos
         return breeze, stench, glitter
 
-    # -------------------------------------------------------------------------
-    # ATUALIZAÇÃO E MOTOR DE DEDUÇÃO LÓGICA
-    # -------------------------------------------------------------------------
     def update_knowledge(self, cell):
         self.visited.add(cell)
         self.pit_status[cell] = "NO"
@@ -88,18 +87,15 @@ class WumpusWorld:
         if breeze:
             self.breeze_sensed.add(cell)
         else:
-            # Regra Direta: Sala visitada sem Brisa -> NENHUM vizinho tem poço
             for n in self.get_adjacent(cell):
                 self.pit_status[n] = "NO"
 
         if stench:
             self.stench_sensed.add(cell)
         else:
-            # Regra Direta: Sala visitada sem Fedor -> NENHUM vizinho é Wumpus
             for n in self.get_adjacent(cell):
                 self.wumpus_status[n] = "NO"
 
-        # Aplica o motor inferencial completo até convergir
         self._apply_deductions()
 
     def _apply_deductions(self):
@@ -108,39 +104,46 @@ class WumpusWorld:
             changed = False
 
             # --- 1. DEDUÇÃO DO WUMPUS ---
-            wumpus_confirmed_cell = None
-            for cell in self.all_coords:
-                if self.wumpus_status[cell] == "CONFIRMED":
-                    wumpus_confirmed_cell = cell
-                    break
-
-            if wumpus_confirmed_cell:
-                # Wumpus localizado: descarta Wumpus em todas as outras salas
+            if self.stench_sensed:
+                wumpus_confirmed_cell = None
                 for cell in self.all_coords:
-                    if (
-                        cell != wumpus_confirmed_cell
-                        and self.wumpus_status[cell] != "NO"
-                    ):
-                        self.wumpus_status[cell] = "NO"
-                        changed = True
-            elif self.stench_sensed:
-                # Interseção de salas com Fedor
-                possible_wumpus = set(self.all_coords)
-                for s_cell in self.stench_sensed:
-                    adj_candidates = {
-                        n
-                        for n in self.get_adjacent(s_cell)
-                        if self.wumpus_status[n] != "NO"
-                    }
-                    possible_wumpus &= adj_candidates
+                    if self.wumpus_status[cell] == "CONFIRMED":
+                        wumpus_confirmed_cell = cell
+                        break
 
-                if len(possible_wumpus) == 1:
-                    w_cell = list(possible_wumpus)[0]
-                    if self.wumpus_status[w_cell] != "CONFIRMED":
-                        self.wumpus_status[w_cell] = "CONFIRMED"
-                        changed = True
+                if wumpus_confirmed_cell:
+                    for cell in self.all_coords:
+                        if (
+                            cell != wumpus_confirmed_cell
+                            and self.wumpus_status[cell] != "NO"
+                        ):
+                            self.wumpus_status[cell] = "NO"
+                            changed = True
+                else:
+                    possible_wumpus = set(self.all_coords)
+                    for s_cell in self.stench_sensed:
+                        adj_candidates = {
+                            n
+                            for n in self.get_adjacent(s_cell)
+                            if self.wumpus_status[n] != "NO"
+                        }
+                        possible_wumpus &= adj_candidates
 
-            # --- 2. DEDUÇÃO DE POÇOS (Candidato Único por Brisa) ---
+                    for cell in self.all_coords:
+                        if (
+                            cell not in possible_wumpus
+                            and self.wumpus_status[cell] != "NO"
+                        ):
+                            self.wumpus_status[cell] = "NO"
+                            changed = True
+
+                    if len(possible_wumpus) == 1:
+                        w_cell = list(possible_wumpus)[0]
+                        if self.wumpus_status[w_cell] != "CONFIRMED":
+                            self.wumpus_status[w_cell] = "CONFIRMED"
+                            changed = True
+
+            # --- 2. DEDUÇÃO DE POÇOS (Candidato Único) ---
             for b_cell in self.breeze_sensed:
                 candidates = [
                     n
@@ -153,75 +156,61 @@ class WumpusWorld:
                         self.pit_status[p_cell] = "CONFIRMED"
                         changed = True
 
-            # --- 2.1 REGRA DA CONTAGEM TOTAL DE POÇOS ---
-            confirmed_pits = [
+            # --- 3. LIMITE DE POÇOS (Máximo 2 Poços) ---
+            confirmed_pits = {
                 c for c in self.all_coords if self.pit_status[c] == "CONFIRMED"
-            ]
+            }
             if len(confirmed_pits) == 2:
                 for c in self.all_coords:
                     if self.pit_status[c] == "POSSIBLE":
                         self.pit_status[c] = "NO"
                         changed = True
 
-            # --- 3. ELIMINAÇÃO DE SUSPEITAS DE POÇO (Brisas Explicadas) ---
-            for cell in self.all_coords:
-                if (
-                    cell not in self.visited
-                    and self.pit_status[cell] == "POSSIBLE"
-                ):
-                    visited_adj = [
-                        n for n in self.get_adjacent(cell) if n in self.visited
-                    ]
+            # --- 4. HIPÓTESE E SATISFIABILIDADE DE POÇOS ---
+            possible_pits = [
+                cell
+                for cell in self.all_coords
+                if self.pit_status[cell] == "POSSIBLE"
+            ]
+            max_pits = 2
 
-                    if not visited_adj:
+            if self.breeze_sensed and possible_pits:
+                for c in list(possible_pits):
+                    rem_budget = max_pits - len(confirmed_pits) - 1
+
+                    if rem_budget < 0:
+                        self.pit_status[c] = "NO"
+                        changed = True
                         continue
 
-                    is_needed_for_pit = False
-                    for adj_visited in visited_adj:
-                        if adj_visited in self.breeze_sensed:
-                            has_confirmed_pit = any(
-                                self.pit_status[n] == "CONFIRMED"
-                                for n in self.get_adjacent(adj_visited)
-                            )
-                            if not has_confirmed_pit:
-                                is_needed_for_pit = True
-                                break
+                    other_candidates = [p for p in possible_pits if p != c]
+                    is_c_valid = False
 
-                    if not is_needed_for_pit:
-                        self.pit_status[cell] = "NO"
+                    for r in range(
+                        min(rem_budget + 1, len(other_candidates) + 1)
+                    ):
+                        for extra in itertools.combinations(
+                            other_candidates, r
+                        ):
+                            hypo_pits = confirmed_pits | {c} | set(extra)
+
+                            all_breezes_covered = True
+                            for b_cell in self.breeze_sensed:
+                                adj = set(self.get_adjacent(b_cell))
+                                if not (adj & hypo_pits):
+                                    all_breezes_covered = False
+                                    break
+
+                            if all_breezes_covered:
+                                is_c_valid = True
+                                break
+                        if is_c_valid:
+                            break
+
+                    if not is_c_valid:
+                        self.pit_status[c] = "NO"
                         changed = True
 
-            # --- 4. ELIMINAÇÃO DE SUSPEITAS DE WUMPUS (Fedores Explicados) ---
-            for cell in self.all_coords:
-                if (
-                    cell not in self.visited
-                    and self.wumpus_status[cell] == "POSSIBLE"
-                ):
-                    visited_adj = [
-                        n for n in self.get_adjacent(cell) if n in self.visited
-                    ]
-
-                    if not visited_adj:
-                        continue
-
-                    is_needed_for_wumpus = False
-                    for adj_visited in visited_adj:
-                        if adj_visited in self.stench_sensed:
-                            has_confirmed_wumpus = any(
-                                self.wumpus_status[n] == "CONFIRMED"
-                                for n in self.get_adjacent(adj_visited)
-                            )
-                            if not has_confirmed_wumpus:
-                                is_needed_for_wumpus = True
-                                break
-
-                    if not is_needed_for_wumpus:
-                        self.wumpus_status[cell] = "NO"
-                        changed = True
-
-    # -------------------------------------------------------------------------
-    # NAVEGAÇÃO SEGURA (BFS)
-    # -------------------------------------------------------------------------
     def rota_segura_bfs(self, pos_inicial, pos_objetivo):
         queue = collections.deque([[pos_inicial]])
         seen = {pos_inicial}
@@ -242,9 +231,6 @@ class WumpusWorld:
                     queue.append(path + [n])
         return None
 
-    # -------------------------------------------------------------------------
-    # RENDERIZAÇÃO NO TERMINAL
-    # -------------------------------------------------------------------------
     def get_cell_symbol(self, cell):
         if cell == self.current_pos:
             return "🤖"
@@ -280,7 +266,7 @@ class WumpusWorld:
         print(f"🐾 PASSO {self.step_counter} | 🎬 AÇÃO: {action_msg}")
         print("=" * 55)
 
-        print(f"📍 Posição Atual do Robô: {self.current_pos}")
+        print(f"📍 Posição Atual do Robô (X, Y): {self.current_pos}")
 
         sensores_ativos = []
         if breeze:
@@ -302,12 +288,13 @@ class WumpusWorld:
 
         print("-" * 55)
 
+        # Desenha a grade: Linhas (Y) do topo (3) para a base (0), Colunas (X) da esq (0) para dir (3)
         print("      c0  c1  c2  c3")
         print("    +-----------------+")
-        for r in range(self.grid_size - 1, -1, -1):
-            row_str = f" r{r} | "
-            for c in range(self.grid_size):
-                cell_repr = self.get_cell_symbol((r, c))
+        for y in range(self.grid_size - 1, -1, -1):
+            row_str = f" r{y} | "
+            for x in range(self.grid_size):
+                cell_repr = self.get_cell_symbol((x, y))
                 row_str += f"{cell_repr}  "
             print(row_str + "|")
         print("    +-----------------+")
@@ -316,12 +303,9 @@ class WumpusWorld:
         )
         print("-" * 55)
 
-    # -------------------------------------------------------------------------
-    # EXECUÇÃO DA SIMULAÇÃO
-    # -------------------------------------------------------------------------
     def solve(self):
         print("\n" + "⚙️ " * 15)
-        print("  GABARITO INICIAL DA CAVERNA (POSIÇÕES REAIS)")
+        print("  GABARITO INICIAL DA CAVERNA (POSIÇÕES REAIS em X,Y)")
         print("⚙️ " * 15)
         print(f"  🤖 Robô (Início): {self.start_pos}")
         print(f"  💰 Ouro:          {self.gold_pos}")
@@ -329,7 +313,6 @@ class WumpusWorld:
         print(f"  🛑 Poços:         {list(self.pits)}")
         print("⚙️ " * 15 + "\n")
 
-        # Atualiza o conhecimento da posição inicial ANTES de desenhar o PASSO 0
         self.update_knowledge(self.current_pos)
 
         time.sleep(1)
@@ -343,11 +326,10 @@ class WumpusWorld:
                 print(
                     "\n🏆 VITÓRIA! O Pote de Ouro foi encontrado com sucesso!"
                 )
-                print("🏁 CAMINHO SEGURO PERCORRIDO ATÉ O OURO:")
-                print(" -> ".join(f"[{r},{c}]" for r, c in self.path_taken))
+                print("🏁 CAMINHO SEGURO PERCORRIDO ATÉ O OURO (X, Y):")
+                print(" -> ".join(f"[{x},{y}]" for x, y in self.path_taken))
                 return True
 
-            # Salas 100% seguras que ainda não foram visitadas
             objetivos = [
                 c
                 for c in self.all_coords
@@ -362,7 +344,7 @@ class WumpusWorld:
                     "A IA interrompeu a movimentação para evitar riscos de falha/morte."
                 )
                 print("\n📍 CAMINHO SEGURO PERCORRIDO ATÉ O MOMENTO DA PARADA:")
-                print(" -> ".join(f"[{r},{c}]" for r, c in self.path_taken))
+                print(" -> ".join(f"[{x},{y}]" for x, y in self.path_taken))
                 break
 
             melhor_rota = None
@@ -375,7 +357,7 @@ class WumpusWorld:
             if not melhor_rota or len(melhor_rota) < 2:
                 print("\n❌ Não foi possível traçar uma rota segura.")
                 print("\n📍 CAMINHO SEGURO PERCORRIDO ATÉ O MOMENTO DA PARADA:")
-                print(" -> ".join(f"[{r},{c}]" for r, c in self.path_taken))
+                print(" -> ".join(f"[{x},{y}]" for x, y in self.path_taken))
                 break
 
             proximo_passo = melhor_rota[1]
@@ -383,7 +365,6 @@ class WumpusWorld:
             self.path_taken.append(proximo_passo)
             self.step_counter += 1
 
-            # Atualiza o conhecimento do novo local visitado
             self.update_knowledge(self.current_pos)
 
             time.sleep(0.8)
@@ -392,17 +373,14 @@ class WumpusWorld:
             )
 
 
-# -----------------------------------------------------------------------------
-# ENTRADA DE DADOS
-# -----------------------------------------------------------------------------
 def get_coordinate_input(prompt):
     val = input(prompt).strip()
     if not val:
         return None
     try:
-        r, c = map(int, val.split(","))
-        if 0 <= r < 4 and 0 <= c < 4:
-            return (r, c)
+        x, y = map(int, val.split(","))
+        if 0 <= x < 4 and 0 <= y < 4:
+            return (x, y)
     except ValueError:
         pass
     print("⚠️ Entrada inválida. Sorteando posição aleatória...")
@@ -413,17 +391,26 @@ if __name__ == "__main__":
     print("=" * 55)
     print("      DESAFIO DO LABIRINTO WUMPUS 4x4 (AGENTE LÓGICO)")
     print("=" * 55)
-    print("💡 DICA: Pressione [ENTER] para sortear qualquer coordenada aleatoriamente.\n")
+    print(
+        "💡 FORMATO DE ENTRADA: X,Y  (Onde X = Coluna [0-3] e Y = Linha [0-3])"
+    )
+    print("💡 Pressione [ENTER] para sortear qualquer posição aleatoriamente.\n")
 
-    start_in = get_coordinate_input("👉 Posição Inicial do Robô (linha,coluna): ")
-    gold_in = get_coordinate_input("👉 Posição do Ouro (linha,coluna): ")
-    wumpus_in = get_coordinate_input("👉 Posição do Wumpus (linha,coluna): ")
+    start_in = get_coordinate_input(
+        "👉 Posição Inicial do Robô (Coluna X, Linha Y): "
+    )
+    gold_in = get_coordinate_input(
+        "👉 Posição do Ouro (Coluna X, Linha Y): "
+    )
+    wumpus_in = get_coordinate_input(
+        "👉 Posição do Wumpus (Coluna X, Linha Y): "
+    )
 
     pits_in = []
-    p1 = get_coordinate_input("👉 Posição do Poço 1 (linha,coluna): ")
+    p1 = get_coordinate_input("👉 Posição do Poço 1 (Coluna X, Linha Y): ")
     if p1:
         pits_in.append(p1)
-    p2 = get_coordinate_input("👉 Posição do Poço 2 (linha,coluna): ")
+    p2 = get_coordinate_input("👉 Posição do Poço 2 (Coluna X, Linha Y): ")
     if p2:
         pits_in.append(p2)
 
