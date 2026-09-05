@@ -1,5 +1,6 @@
 import random
 from collections import deque
+import sys
 
 class MundoWumpus:
     def __init__(self, pos_robo, pos_ouro, pos_wumpus, pocos):
@@ -10,19 +11,16 @@ class MundoWumpus:
         self.pocos = pocos
 
         # Matriz de Conhecimento:
-        # '?'  = Desconhecido
-        # 'OK' = Seguro
-        # '?W' = Possível Wumpus
-        # '?P' = Possível Poço
-        # 'W'  = Wumpus Confirmado
-        # 'P'  = Poço Confirmado
+        # '?'  = Desconhecido (⬛)
+        # 'OK' = Seguro (🟢 não visitado / 🟩 visitado)
+        # '?W' = Possível Wumpus (🟡)
+        # '?P' = Possível Poço (🔵)
+        # '?WP'= Possível Wumpus e Poço simultâneo (🌐)
+        # 'W'  = Wumpus Confirmado (🦨)
+        # 'P'  = Poço Confirmado (🛑)
         self.conhecimento = [['?' for _ in range(4)] for _ in range(4)]
         self.visitadas = set()
-        
-        # Histórico de leituras por posição: (x, y) -> {'fedor': bool, 'brisa': bool}
         self.historico_leituras = {}
-
-        # A posição inicial é 100% segura
         self.conhecimento[pos_robo[1]][pos_robo[0]] = 'OK'
 
     def eh_valida(self, x, y):
@@ -43,97 +41,111 @@ class MundoWumpus:
         return fedor, brisa, brilho
 
     def inferir_logica(self):
-        mudou = True
-        while mudou:
-            mudou = False
+        """
+        Motor de Inferência com Explicação de Sensores por Perigos Confirmados.
+        """
+        # 1. Salas visitadas são sempre 'OK'
+        for (lx, ly) in self.historico_leituras.keys():
+            self.conhecimento[ly][lx] = 'OK'
 
-            # 1. Salas visitadas são sempre 'OK'
-            for (lx, ly) in self.historico_leituras.keys():
-                if self.conhecimento[ly][lx] != 'OK':
-                    self.conhecimento[ly][lx] = 'OK'
-                    mudou = True
+        wumpus_confirmado = None
+        for y in range(4):
+            for x in range(4):
+                if self.conhecimento[y][x] == 'W':
+                    wumpus_confirmado = (x, y)
 
-            # Check: Já temos um Wumpus confirmado no mapa?
-            wumpus_encontrado = any(
-                self.conhecimento[y][x] == 'W' 
-                for y in range(4) for x in range(4)
-            )
+        pocos_confirmados = [(x, y) for y in range(4) for x in range(4) if self.conhecimento[y][x] == 'P']
 
-            # 2. Análise de cada célula para eliminar riscos ou registrar suspeitas
-            for y in range(4):
-                for x in range(4):
-                    if self.conhecimento[y][x] in ['OK', 'W', 'P']:
-                        continue
+        # 2. Dedução por Unicidade de Vizinhança
+        for (lx, ly), s in self.historico_leituras.items():
+            vizs = self.get_vizinhos(lx, ly)
 
-                    pode_ser_wumpus = not wumpus_encontrado
-                    pode_ser_poco = True
+            if s['fedor'] and wumpus_confirmado is None:
+                candidatos_w = [v for v in vizs if self.conhecimento[v[1]][v[0]] not in ['OK', 'P']]
+                if len(candidatos_w) == 1:
+                    wx, wy = candidatos_w[0]
+                    self.conhecimento[wy][wx] = 'W'
+                    wumpus_confirmado = (wx, wy)
 
-                    for (lx, ly), s in self.historico_leituras.items():
-                        if (x, y) in self.get_vizinhos(lx, ly):
-                            if not s['fedor']:
-                                pode_ser_wumpus = False
-                            if not s['brisa']:
-                                pode_ser_poco = False
+            if s['brisa'] and len(pocos_confirmados) < 2:
+                candidatos_p = [v for v in vizs if self.conhecimento[v[1]][v[0]] not in ['OK', 'W']]
+                if len(candidatos_p) == 1:
+                    px, py = candidatos_p[0]
+                    if self.conhecimento[py][px] != 'P':
+                        self.conhecimento[py][px] = 'P'
+                        if (px, py) not in pocos_confirmados:
+                            pocos_confirmados.append((px, py))
 
-                    # Se não pode ser Wumpus nem Poço -> Torna-se SEGURA
-                    if not pode_ser_wumpus and not pode_ser_poco:
-                        if self.conhecimento[y][x] != 'OK':
-                            self.conhecimento[y][x] = 'OK'
-                            mudou = True
-                    elif pode_ser_wumpus and not pode_ser_poco:
-                        if self.conhecimento[y][x] != '?W':
-                            self.conhecimento[y][x] = '?W'
-                            mudou = True
-                    elif pode_ser_poco and not pode_ser_wumpus:
-                        if self.conhecimento[y][x] != '?P':
-                            self.conhecimento[y][x] = '?P'
-                            mudou = True
+        # Atualiza lista de poços após deduções
+        pocos_confirmados = [(x, y) for y in range(4) for x in range(4) if self.conhecimento[y][x] == 'P']
 
-            # 3. Dedução de Certeza do Wumpus por Unicidade / Interseção
-            if not wumpus_encontrado:
-                for (lx, ly), s in self.historico_leituras.items():
-                    if s['fedor']:
-                        candidatos = []
-                        for vx, vy in self.get_vizinhos(lx, ly):
-                            if self.conhecimento[vy][vx] not in ['OK', 'P']:
-                                descartado = False
-                                for (olx, oly), os in self.historico_leituras.items():
-                                    if (vx, vy) in self.get_vizinhos(olx, oly) and not os['fedor']:
-                                        descartado = True
-                                        break
-                                if not descartado:
-                                    candidatos.append((vx, vy))
+        # 3. Regra de Explicação / Satisfação de Sensor:
+        # Se uma leitura sentiu brisa e já existe um poço confirmado adjacente,
+        # o outro vizinho desconhecido não precisa ser poço para justificar a brisa.
+        for (lx, ly), s in self.historico_leituras.items():
+            vizs = self.get_vizinhos(lx, ly)
+            if s['brisa']:
+                tem_poco_confirmado = any(self.conhecimento[v[1]][v[0]] == 'P' for v in vizs)
+                if tem_poco_confirmado:
+                    for vx, vy in vizs:
+                        if self.conhecimento[vy][vx] == '?P':
+                            self.conhecimento[vy][vx] = 'OK'
+            if s['fedor']:
+                tem_wumpus_confirmado = any(self.conhecimento[v[1]][v[0]] == 'W' for v in vizs)
+                if tem_wumpus_confirmado:
+                    for vx, vy in vizs:
+                        if self.conhecimento[vy][vx] == '?W':
+                            self.conhecimento[vy][vx] = 'OK'
+                        elif self.conhecimento[vy][vx] == '?WP':
+                            self.conhecimento[vy][vx] = '?P'
 
-                        if len(candidatos) == 1:
-                            wx, wy = candidatos[0]
-                            self.conhecimento[wy][wx] = 'W'
-                            # Limpa qualquer suspeita de Wumpus residual no resto do mapa
-                            for cy in range(4):
-                                for cx in range(4):
-                                    if (cx, cy) != (wx, wy) and self.conhecimento[cy][cx] == '?W':
-                                        self.conhecimento[cy][cx] = '?'
-                            mudou = True
-                            break
+        # Dedução lógica extra para poços por exclusão de vizinho único
+        for (lx, ly), s in self.historico_leituras.items():
+            if s['brisa'] and len(pocos_confirmados) < 2:
+                vizs = self.get_vizinhos(lx, ly)
+                desconhecidos = [v for v in vizs if self.conhecimento[v[1]][v[0]] not in ['OK', 'W', 'P']]
+                if len(desconhecidos) == 1:
+                    ux, uy = desconhecidos[0]
+                    if self.conhecimento[uy][ux] != 'P':
+                        self.conhecimento[uy][ux] = 'P'
+                        if (ux, uy) not in pocos_confirmados:
+                            pocos_confirmados.append((ux, uy))
 
-            # 4. Dedução de Certeza de Poço por Unicidade
-            for (lx, ly), s in self.historico_leituras.items():
-                if s['brisa']:
-                    candidatos = []
-                    for vx, vy in self.get_vizinhos(lx, ly):
-                        if self.conhecimento[vy][vx] not in ['OK', 'W']:
-                            descartado = False
-                            for (olx, oly), os in self.historico_leituras.items():
-                                if (vx, vy) in self.get_vizinhos(olx, oly) and not os['brisa']:
-                                    descartado = True
-                                    break
-                            if not descartado:
-                                candidatos.append((vx, vy))
+        pocos_confirmados = [(x, y) for y in range(4) for x in range(4) if self.conhecimento[y][x] == 'P']
 
-                    if len(candidatos) == 1:
-                        px, py = candidatos[0]
-                        if self.conhecimento[py][px] != 'P':
-                            self.conhecimento[py][px] = 'P'
-                            mudou = True
+        # 4. Refinação e Atribuição Dinâmica de Estados e Suspeitas (?WP, ?W, ?P, OK)
+        for y in range(4):
+            for x in range(4):
+                if self.conhecimento[y][x] in ['W', 'P', 'OK']:
+                    continue
+
+                tem_viz_fedor = any((x, y) in self.get_vizinhos(lx, ly) and s['fedor'] for (lx, ly), s in self.historico_leituras.items())
+                tem_viz_brisa = any((x, y) in self.get_vizinhos(lx, ly) and s['brisa'] for (lx, ly), s in self.historico_leituras.items())
+
+                provado_sem_fedor = any((x, y) in self.get_vizinhos(lx, ly) and not s['fedor'] for (lx, ly), s in self.historico_leituras.items())
+                provado_sem_brisa = any((x, y) in self.get_vizinhos(lx, ly) and not s['brisa'] for (lx, ly), s in self.historico_leituras.items())
+
+                if provado_sem_fedor:
+                    tem_viz_fedor = False
+                if provado_sem_brisa:
+                    tem_viz_brisa = False
+
+                if wumpus_confirmado is not None:
+                    tem_viz_fedor = False
+
+                if len(pocos_confirmados) >= 2:
+                    tem_viz_brisa = False
+
+                if tem_viz_fedor and tem_viz_brisa:
+                    self.conhecimento[y][x] = '?WP'
+                elif tem_viz_fedor:
+                    self.conhecimento[y][x] = '?W'
+                elif tem_viz_brisa:
+                    self.conhecimento[y][x] = '?P'
+                else:
+                    tem_info = any((x, y) in self.get_vizinhos(lx, ly) for (lx, ly) in self.historico_leituras.keys())
+                    if tem_info or self.conhecimento[y][x] in ['?WP', '?W', '?P']:
+                        self.conhecimento[y][x] = 'OK'
 
     def rota_segura_bfs(self, inicio, destino):
         queue = deque([[inicio]])
@@ -163,20 +175,22 @@ class MundoWumpus:
                 if (x, y) == pos_atual:
                     linha += "🤖 "
                 elif self.conhecimento[y][x] == 'W':
-                    linha += "🦨 "  # Wumpus Confirmado
+                    linha += "🦨 "
                 elif self.conhecimento[y][x] == 'P':
-                    linha += "🛑 "  # Poço Confirmado
+                    linha += "🛑 "
+                elif self.conhecimento[y][x] == '?WP':
+                    linha += "🌐 "
                 elif self.conhecimento[y][x] == '?W':
-                    linha += "🟡 "  # Possível Wumpus (Suspeita)
+                    linha += "🟡 "
                 elif self.conhecimento[y][x] == '?P':
-                    linha += "🔵 "  # Possível Poço (Suspeita)
+                    linha += "🔵 "
                 elif self.conhecimento[y][x] == 'OK':
                     if (x, y) in self.visitadas:
-                        linha += "🟩 "  # Seguro e Visitado
+                        linha += "🟩 "
                     else:
-                        linha += "🟢 "  # Seguro e Não Visitado
+                        linha += "🟢 "
                 else:
-                    linha += "⬛ "  # Desconhecido
+                    linha += "⬛ "
             print(linha)
         print("    ----------------")
         print("     0  1  2  3 (X)\n")
@@ -238,9 +252,6 @@ class MundoWumpus:
         print(" -> ".join([str(p) for p in caminho_total]))
         print("==================================================")
 
-
-# --- LEITURA E INICIALIZAÇÃO ---
-
 def ler_coordenada(msg):
     while True:
         try:
@@ -260,7 +271,10 @@ def main():
     print("1 - Inserir posições customizadas")
     print("2 - Gerar posições aleatórias")
     
-    opcao = input("Opção (1/2, padrão=2): ").strip()
+    try:
+        opcao = input("Opção (1/2, padrão=2): ").strip()
+    except Exception:
+        opcao = "2"
     
     if opcao == "1":
         print("\nDigite as coordenadas no formato X,Y (valores de 0 a 3):")
@@ -274,9 +288,15 @@ def main():
         pos = random.sample([(x, y) for x in range(4) for y in range(4)], 5)
         pos_robo, pos_ouro, pos_wumpus = pos[0], pos[1], pos[2]
         pocos = [pos[3], pos[4]]
+        print(f"Gerado automaticamente -> Robô: {pos_robo}, Ouro: {pos_ouro}, Wumpus: {pos_wumpus}, Poços: {pocos}")
 
     jogo = MundoWumpus(pos_robo, pos_ouro, pos_wumpus, pocos)
     jogo.executar()
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        print(f"\n❌ Ocorreu um erro inesperado: {e}")
+    finally:
+        input("\nPressione ENTER para fechar a janela...")

@@ -299,7 +299,7 @@
       const simV = document.getElementById('simulatorView');
       const codeV = document.getElementById('codeView');
       const simB = document.getElementById('tabSimBtn');
-      codeB = document.getElementById('tabCodeBtn');
+      const codeB = document.getElementById('tabCodeBtn');
 
       if (tab === 'sim') {
         simV.classList.remove('hidden');
@@ -330,7 +330,6 @@
 
     function applySettings() {
       const newC = readInputs();
-      // Validation: No overlap with start
       if (toKey(...newC.start) === toKey(...newC.wumpus) || newC.pits.some(p => toKey(...p) === toKey(...newC.start))) {
         alert("O início do Robô não pode coincidir com o Wumpus ou Poço!");
         return;
@@ -685,196 +684,197 @@ class WumpusSATWorld:
            Se Wumpus e Poço foram ambos descartados para S -> S É 100% SEGURA!
         """
         wumpus_confirmed = [p for p, v in self.dangerous_rooms.items() if v == "Wumpus"]
-        confirmed_pits = [p for p, v in self.dangerous_rooms.items() if v == "Poço"]
-
-        # Passo 1: Confirmar perigos diretos por isolamento
-        for (vx, vy) in list(self.visited):
+        
+        # 1. Dedução de perigos por confinamento de sensores
+        for vx, vy in list(self.visited):
             breeze, stench, _ = self.read_sensors(vx, vy)
             adj = self.get_adjacent(vx, vy)
-            unknowns = [p for p in adj if p not in self.safe_rooms and p not in self.visited]
+            unvisited_adj = [p for p in adj if p not in self.visited]
 
-            if stench and len(unknowns) == 1 and not wumpus_confirmed:
-                target = unknowns[0]
-                if target not in self.dangerous_rooms:
-                    self.dangerous_rooms[target] = "Wumpus"
-                    print(f"  🛑 DEDUÇÃO SAT: Wumpus confirmado isolado em {target}!")
-                    wumpus_confirmed.append(target)
+            if stench and not wumpus_confirmed:
+                unknown_targets = [p for p in unvisited_adj if p not in self.safe_rooms]
+                if len(unknown_targets) == 1:
+                    target = unknown_targets[0]
+                    if target not in self.dangerous_rooms:
+                        self.dangerous_rooms[target] = "Wumpus"
+                        print(f"   🎯 [SAT DEDUÇÃO] Wumpus CONFIRMADO com 100% de certeza em {target}!")
+                        wumpus_confirmed = [target]
 
-            if breeze and len(unknowns) == 1:
-                target = unknowns[0]
-                if target not in self.dangerous_rooms and target not in confirmed_pits:
-                    self.dangerous_rooms[target] = "Poço"
-                    print(f"  🛑 DEDUÇÃO SAT: Poço confirmado isolado em {target}!")
-                    confirmed_pits.append(target)
+            if breeze:
+                unknown_targets = [p for p in unvisited_adj if p not in self.safe_rooms and self.dangerous_rooms.get(p) != "Wumpus"]
+                if len(unknown_targets) == 1:
+                    target = unknown_targets[0]
+                    if target not in self.dangerous_rooms:
+                        self.dangerous_rooms[target] = "Poço"
+                        print(f"   🎯 [SAT DEDUÇÃO] Poço CONFIRMADO com 100% de certeza em {target}!")
 
-        # Passo 2: Eliminação por hipótese para salas suspeitas
-        candidate_rooms = set(list(self.suspect_pits) + list(self.suspect_wumpus))
-        for room in list(candidate_rooms):
-            if room in self.safe_rooms or room in self.visited or room in self.dangerous_rooms:
+        # 2. Eliminação de suspeitas para salas não visitadas
+        all_unvisited = [(x,y) for x in range(GRID_SIZE) for y in range(GRID_SIZE) if (x,y) not in self.visited]
+
+        for ux, uy in all_unvisited:
+            if (ux, uy) in self.dangerous_rooms:
                 continue
 
-            rx, ry = room
-            wumpus_possible = True
-            pit_possible = True
+            can_be_wumpus = True
+            can_be_pit = True
 
-            # Se o Wumpus já foi confirmado em outro lugar, esta sala não pode ser o Wumpus
-            if wumpus_confirmed and room not in wumpus_confirmed:
-                wumpus_possible = False
+            # Se Wumpus já existe no mapa em outro lugar, não pode ser Wumpus aqui
+            if wumpus_confirmed and (ux, uy) not in wumpus_confirmed:
+                can_be_wumpus = False
 
-            # Verificar se algum vizinho visitado exige Poço nesta sala
-            # Se TODOS os vizinhos visitados com Brisa já têm todos os seus Poços explicados por confirmed_pits,
-            # então esta sala não precisa ser um Poço!
-            required_as_pit = False
-            for nx, ny in self.get_adjacent(rx, ry):
-                if (nx, ny) in self.visited:
-                    breeze, _, _ = self.read_sensors(nx, ny)
-                    if breeze:
-                        # Conta quantos poços confirmados existem ao redor deste vizinho
-                        adj_pits = [p for p in self.get_adjacent(nx, ny) if p in confirmed_pits]
-                        if len(adj_pits) == 0:
-                            # Ainda falta explicar esta brisa, então room pode ser poço
-                            required_as_pit = True
+            adj = self.get_adjacent(ux, uy)
+            
+            # Checar restrições dos vizinhos visitados
+            for vx, vy in adj:
+                if (vx, vy) in self.visited:
+                    breeze, stench, _ = self.read_sensors(vx, vy)
+                    if not stench:
+                        can_be_wumpus = False
+                    if not breeze:
+                        can_be_pit = False
 
-            if not required_as_pit and len(confirmed_pits) >= 2:
-                pit_possible = False
+            # Se ambas hipóteses de perigo forem falsas -> A SALA É 100% SEGURA!
+            if not can_be_wumpus and not can_be_pit:
+                if (ux, uy) not in self.safe_rooms:
+                    self.safe_rooms.add((ux, uy))
+                    print(f"   🟩 [SAT ELIMINAÇÃO] Sala {ux, uy} provada 100% SEGURA!")
 
-            # SE AMBOS PERIGOS FORAM DESDITOS -> A SALA É 100% SEGURA!
-            if not wumpus_possible and not pit_possible:
-                self.safe_rooms.add(room)
-                self.suspect_pits.discard(room)
-                self.suspect_wumpus.discard(room)
-                print(f"  ✨ DEDUÇÃO SAT: Sala {room} PROVADA 100% SEGURA por eliminação de hipóteses!")
-
-    def find_nearest_unvisited_safe(self):
-        """BFS para navegação segura garantida."""
-        queue = collections.deque([[self.current_pos]])
-        visited_bfs = {self.current_pos}
+    def bfs_find_path(self, start_pos, target_pos, allowed_set):
+        """Encontra o menor caminho entre duas posições usando apenas salas permitidas."""
+        queue = collections.deque([(start_pos, [start_pos])])
+        visited_bfs = set([start_pos])
 
         while queue:
-            path = queue.popleft()
-            cx, cy = path[-1]
-
-            if (cx, cy) in self.safe_rooms and (cx, cy) not in self.visited:
+            curr, path = queue.popleft()
+            if curr == target_pos:
                 return path
 
-            for nx, ny in self.get_adjacent(cx, cy):
-                if (nx, ny) in self.safe_rooms and (nx, ny) not in visited_bfs:
+            for nx, ny in self.get_adjacent(*curr):
+                if (nx, ny) in allowed_set and (nx, ny) not in visited_bfs:
                     visited_bfs.add((nx, ny))
-                    queue.append(path + [(nx, ny)])
+                    queue.append(((nx, ny), path + [(nx, ny)]))
         return None
 
-    async def run_solver(self):
-        print("==========================================")
-        print("   EXPLORAÇÃO WUMPUS COM SAT-SOLVER IA   ")
-        print("==========================================")
+    def update_suspects(self):
+        """Atualiza visualmente quais salas são suspeitas para a UI."""
+        self.suspect_pits.clear()
+        self.suspect_wumpus.clear()
+
+        for vx, vy in self.visited:
+            breeze, stench, _ = self.read_sensors(vx, vy)
+            adj = self.get_adjacent(vx, vy)
+
+            if breeze:
+                for p in adj:
+                    if p not in self.visited and p not in self.safe_rooms and p not in self.dangerous_rooms:
+                        self.suspect_pits.add(p)
+            if stench:
+                for p in adj:
+                    if p not in self.visited and p not in self.safe_rooms and p not in self.dangerous_rooms:
+                        self.suspect_wumpus.add(p)
+
+    def run_agent(self):
+        print("=== INICIANDO AGENTE DE RACIOCÍNIO SAT WUMPUS 4x4 ===")
+        print(f"Posição Inicial: {self.start} | Ouro: {self.gold}")
         
-        while True:
+        while not self.found_gold:
             self.step += 1
             cx, cy = self.current_pos
             breeze, stench, glitter = self.read_sensors(cx, cy)
 
-            sensor_list = []
-            if glitter: sensor_list.append("✨ BRILHO")
-            if breeze: sensor_list.append("💨 BRISA")
-            if stench: sensor_list.append("🦨 FEDOR")
-            if not sensor_list: sensor_list.append("NENHUM")
+            print(f"\\n📍 [Passo {self.step}] Posição: ({cx},{cy})")
+            print(f"   Sensores: Brisa={breeze} | Fedor={stench} | Brilho={glitter}")
 
-            print(f"\\n📍 Passo {self.step}: Robô em ({cx}, {cy}) | Sensores: [{', '.join(sensor_list)}]")
-            self.sync_ui(breeze, stench, glitter)
-
-            # 1. Condição de Vitória
             if glitter:
                 self.found_gold = True
+                print("\\n🎉 Ouro Encontrado! O Robô recuperou o tesouro com sucesso!")
                 self.sync_ui(breeze, stench, glitter)
-                print(f"🏆 OURO ENCONTRADO EM ({cx}, {cy})! 🎉")
-                print(f"Caminho percorrido: {self.path_history}")
-                return True
+                break
 
-            # 2. Atualizar Hipóteses
-            adj = self.get_adjacent(cx, cy)
+            # 1. Se a sala atual não tem brisa nem fedor, todos os vizinhos não visitados são seguros
             if not breeze and not stench:
-                for nxt in adj:
-                    if nxt not in self.dangerous_rooms:
-                        self.safe_rooms.add(nxt)
-            else:
-                for nxt in adj:
-                    if nxt not in self.visited and nxt not in self.safe_rooms:
-                        if breeze: self.suspect_pits.add(nxt)
-                        if stench: self.suspect_wumpus.add(nxt)
+                for nx, ny in self.get_adjacent(cx, cy):
+                    if (nx, ny) not in self.visited and (nx, ny) not in self.dangerous_rooms:
+                        self.safe_rooms.add((nx, ny))
 
-            # 3. Aplicar Dedução SAT Avançada
+            # 2. Executa a máquina de dedução proposicional SAT
             self.deduce_sat_dangers_and_safety()
+            self.update_suspects()
             self.sync_ui(breeze, stench, glitter)
 
-            # 4. Decisão do Próximo Passo
-            unvisited_safe = [p for p in adj if p in self.safe_rooms and p not in self.visited]
+            # 3. Encontrar próxima sala segura não visitada
+            unvisited_safe = [p for p in self.safe_rooms if p not in self.visited]
 
             if unvisited_safe:
-                self.current_pos = unvisited_safe[0]
-                self.visited.add(self.current_pos)
-                self.path_history.append(self.current_pos)
-            else:
-                path = self.find_nearest_unvisited_safe()
-                if path and len(path) > 1:
-                    next_step = path[1]
-                    print(f"  ↩️ Recuando com segurança via caminho provado até {path[-1]} (Próximo: {next_step})")
+                # Escolhe a sala segura com o menor caminho a partir da posição atual
+                best_target = None
+                shortest_path = None
+
+                for target in unvisited_safe:
+                    path = self.bfs_find_path(self.current_pos, target, self.safe_rooms)
+                    if path and (shortest_path is None or len(path) < len(shortest_path)):
+                        shortest_path = path
+                        best_target = target
+
+                if shortest_path and len(shortest_path) > 1:
+                    # Move para o próximo passo no caminho
+                    next_step = shortest_path[1]
                     self.current_pos = next_step
                     self.visited.add(next_step)
-                    self.path_history.append(next_step)
-                else:
-                    print("❌ NÃO HÁ MAIS CAMINHOS SEGUROS CONFIRMADOS!")
-                    return False
+                    print(f"   ➡️ Movendo com segurança para: {next_step}")
+                    continue
+
+            # Se não houver salas seguras acessíveis, o agente foi cercado por perigos deduzidos
+            print("\\n🛑 [ALERTA DE CERCO] Nenhuma sala segura disponível para navegação.")
+            print("   O solucionador SAT provou que todos os caminhos restantes contêm Perigos (Wumpus/Poço).")
+            print("   Execução finalizada com segurança para evitar a morte do Robô.")
+            break
+
+# Instancia e roda a simulação lendo do dicionário global convertido
+start_pos = tuple(js.config_start.to_py())
+gold_pos = tuple(js.config_gold.to_py())
+wumpus_pos = tuple(js.config_wumpus.to_py())
+pits_pos = [tuple(p) for p in js.config_pits.to_py()]
+
+sim = WumpusSATWorld(
+    start=start_pos,
+    gold=gold_pos,
+    wumpus=wumpus_pos,
+    pits=pits_pos
+)
+sim.run_agent()
 `;
 
-    // Inject pure code snippet into Code View
-    document.getElementById('pythonCodeBlock').innerText = purePythonScript;
-
-    function copyPythonCode() {
-      navigator.clipboard.writeText(purePythonScript).then(() => {
-        alert("Código Python copiado para a área de transferência!");
-      }).catch(() => {
-        const textarea = document.createElement("textarea");
-        textarea.value = purePythonScript;
-        document.body.appendChild(textarea);
-        textarea.select();
-        document.execCommand("copy");
-        document.body.removeChild(textarea);
-        alert("Código Python copiado!");
-      });
-    }
-
-    // Execute Python Script using Pyodide
     async function runPythonScript() {
       if (!isPyodideReady) return;
-
       resetSimulationUI();
-      writeTerminal(`\n[Pyodide] Compilando e executando wumpus_sat_solver.py...`, "text-indigo-400 font-bold");
-
-      const pyRunner = `
-${purePythonScript}
-
-# Instanciar e Rodar com Configuração Atual
-start_pos = tuple(${JSON.stringify(config.start)})
-gold_pos = tuple(${JSON.stringify(config.gold)})
-wumpus_pos = tuple(${JSON.stringify(config.wumpus)})
-pits_pos = [tuple(p) for p in ${JSON.stringify(config.pits)}]
-
-world = WumpusSATWorld(start=start_pos, gold=gold_pos, wumpus=wumpus_pos, pits=pits_pos)
-await world.run_solver()
-`;
-
+      writeTerminal("--- Iniciando Execução do Algoritmo SAT Python ---", "text-amber-400 font-bold");
+      
       try {
-        await pyodide.runPythonAsync(pyRunner);
+        // Exposição direta das configurações para a ponte global do Pyodide
+        pyodide.globals.set('config_start', config.start);
+        pyodide.globals.set('config_gold', config.gold);
+        pyodide.globals.set('config_wumpus', config.wumpus);
+        pyodide.globals.set('config_pits', config.pits);
+
+        await pyodide.runPythonAsync(purePythonScript);
       } catch (err) {
-        writeTerminal(`[Erro Execução Python]: ${err.message}`, "text-red-400");
+        console.error(err);
+        writeTerminal(`[Erro Python] ${err.message}`, "text-red-400 font-bold");
       }
     }
 
-    // Initialize Application
-    window.onload = function() {
+    function copyPythonCode() {
+      navigator.clipboard.writeText(purePythonScript);
+      alert("Código Python copiado para a área de transferência!");
+    }
+
+    // Initialize Page Content
+    window.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('pythonCodeBlock').innerText = purePythonScript;
       renderGrid();
       initPyodideEngine();
-    };
+    });
   </script>
 </body>
 </html>
