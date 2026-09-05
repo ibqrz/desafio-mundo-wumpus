@@ -1,0 +1,4 @@
+- t-inicial: tem so a coordenada 1
+
+- v2 - ajusta a 1 mas 2 parou de funcionar
+
