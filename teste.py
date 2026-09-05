@@ -154,8 +154,6 @@ class WumpusWorld:
                         changed = True
 
             # --- 2.1 REGRA DA CONTAGEM TOTAL DE POÇOS ---
-            # Como o mundo 4x4 possui exatamente 2 poços, se ambos forem confirmados,
-            # todas as outras células descartam a suspeita de poço.
             confirmed_pits = [
                 c for c in self.all_coords if self.pit_status[c] == "CONFIRMED"
             ]
@@ -166,8 +164,6 @@ class WumpusWorld:
                         changed = True
 
             # --- 3. ELIMINAÇÃO DE SUSPEITAS DE POÇO (Brisas Explicadas) ---
-            # CORREÇÃO: Apenas avalia células que ainda são "POSSIBLE".
-            # Celulas que já são "NO" jamais devem ser alteradas para "POSSIBLE".
             for cell in self.all_coords:
                 if (
                     cell not in self.visited
@@ -192,12 +188,10 @@ class WumpusWorld:
                                 break
 
                     if not is_needed_for_pit:
-                        # Se todas as brisas ao redor já foram explicadas, esta sala É SEGURA!
                         self.pit_status[cell] = "NO"
                         changed = True
 
             # --- 4. ELIMINAÇÃO DE SUSPEITAS DE WUMPUS (Fedores Explicados) ---
-            # CORREÇÃO: Apenas avalia células que ainda são "POSSIBLE".
             for cell in self.all_coords:
                 if (
                     cell not in self.visited
@@ -304,6 +298,23 @@ class WumpusWorld:
         s_list = list(self.stench_sensed) if self.stench_sensed else "Nenhum"
         print(f"🗺️  Histórico de Locais com Brisa: {b_list}")
         print(f"🗺️  Histórico de Locais com Fedor: {s_list}")
+
+        # --- NOVOS CAMPOS EXIBINDO SUSPEITAS DE PERIGO ---
+        possible_pits = [
+            c for c in self.all_coords
+            if self.pit_status[c] == "POSSIBLE" and c not in self.visited
+        ]
+        possible_wumpus = [
+            c for c in self.all_coords
+            if self.wumpus_status[c] == "POSSIBLE" and c not in self.visited
+        ]
+
+        p_str = possible_pits if possible_pits else "Nenhum"
+        w_str = possible_wumpus if possible_wumpus else "Nenhum"
+
+        print(f"⚠️  Casas de Possíveis Poços (?P): {p_str}")
+        print(f"⚠️  Casas de Possível Wumpus (?W): {w_str}")
+
         print("-" * 55)
 
         print("      c0  c1  c2  c3")
@@ -413,16 +424,17 @@ if __name__ == "__main__":
     print("=" * 55)
     print("      DESAFIO DO LABIRINTO WUMPUS 4x4 (AGENTE LÓGICO)")
     print("=" * 55)
+    print("💡 DICA: Pressione [ENTER] para sortear qualquer coordenada aleatoriamente.\n")
 
-    start_in = get_coordinate_input("👉 Posição Inicial do Robô: ")
-    gold_in = get_coordinate_input("👉 Posição do Ouro: ")
-    wumpus_in = get_coordinate_input("👉 Posição do Wumpus: ")
+    start_in = get_coordinate_input("👉 Posição Inicial do Robô (linha,coluna): ")
+    gold_in = get_coordinate_input("👉 Posição do Ouro (linha,coluna): ")
+    wumpus_in = get_coordinate_input("👉 Posição do Wumpus (linha,coluna): ")
 
     pits_in = []
-    p1 = get_coordinate_input("👉 Posição do Poço 1: ")
+    p1 = get_coordinate_input("👉 Posição do Poço 1 (linha,coluna): ")
     if p1:
         pits_in.append(p1)
-    p2 = get_coordinate_input("👉 Posição do Poço 2: ")
+    p2 = get_coordinate_input("👉 Posição do Poço 2 (linha,coluna): ")
     if p2:
         pits_in.append(p2)
 

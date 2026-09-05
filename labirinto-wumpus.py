@@ -154,8 +154,6 @@ class WumpusWorld:
                         changed = True
 
             # --- 2.1 REGRA DA CONTAGEM TOTAL DE POÇOS ---
-            # Como o mundo 4x4 possui exatamente 2 poços, se ambos forem confirmados,
-            # todas as outras células descartam a suspeita de poço.
             confirmed_pits = [
                 c for c in self.all_coords if self.pit_status[c] == "CONFIRMED"
             ]
@@ -166,8 +164,6 @@ class WumpusWorld:
                         changed = True
 
             # --- 3. ELIMINAÇÃO DE SUSPEITAS DE POÇO (Brisas Explicadas) ---
-            # CORREÇÃO: Apenas avalia células que ainda são "POSSIBLE".
-            # Celulas que já são "NO" jamais devem ser alteradas para "POSSIBLE".
             for cell in self.all_coords:
                 if (
                     cell not in self.visited
@@ -192,12 +188,10 @@ class WumpusWorld:
                                 break
 
                     if not is_needed_for_pit:
-                        # Se todas as brisas ao redor já foram explicadas, esta sala É SEGURA!
                         self.pit_status[cell] = "NO"
                         changed = True
 
             # --- 4. ELIMINAÇÃO DE SUSPEITAS DE WUMPUS (Fedores Explicados) ---
-            # CORREÇÃO: Apenas avalia células que ainda são "POSSIBLE".
             for cell in self.all_coords:
                 if (
                     cell not in self.visited
@@ -267,14 +261,15 @@ class WumpusWorld:
         w_possible = self.wumpus_status[cell] == "POSSIBLE"
         visited_adj = any(n in self.visited for n in self.get_adjacent(cell))
 
-        if not p_possible and not w_possible and visited_adj:
-            return "🟢"
-        if p_possible and w_possible and visited_adj:
-            return "🌐"
-        if p_possible and visited_adj:
-            return "🔵"
-        if w_possible and visited_adj:
-            return "🟡"
+        if visited_adj:
+            if not p_possible and not w_possible:
+                return "🟢"
+            if p_possible and w_possible:
+                return "🌐"
+            if p_possible:
+                return "🔵"
+            if w_possible:
+                return "🟡"
 
         return "⬛"
 
@@ -304,6 +299,7 @@ class WumpusWorld:
         s_list = list(self.stench_sensed) if self.stench_sensed else "Nenhum"
         print(f"🗺️  Histórico de Locais com Brisa: {b_list}")
         print(f"🗺️  Histórico de Locais com Fedor: {s_list}")
+
         print("-" * 55)
 
         print("      c0  c1  c2  c3")
@@ -333,14 +329,15 @@ class WumpusWorld:
         print(f"  🛑 Poços:         {list(self.pits)}")
         print("⚙️ " * 15 + "\n")
 
+        # Atualiza o conhecimento da posição inicial ANTES de desenhar o PASSO 0
+        self.update_knowledge(self.current_pos)
+
         time.sleep(1)
         self.render_grid(
             action_msg=f"Robô colocado na posição inicial {self.start_pos}"
         )
 
         while True:
-            self.update_knowledge(self.current_pos)
-
             _, _, glitter = self.read_sensors(self.current_pos)
             if glitter:
                 print(
@@ -386,6 +383,9 @@ class WumpusWorld:
             self.path_taken.append(proximo_passo)
             self.step_counter += 1
 
+            # Atualiza o conhecimento do novo local visitado
+            self.update_knowledge(self.current_pos)
+
             time.sleep(0.8)
             self.render_grid(
                 action_msg=f"Movimentou-se para a sala {proximo_passo}"
@@ -413,16 +413,17 @@ if __name__ == "__main__":
     print("=" * 55)
     print("      DESAFIO DO LABIRINTO WUMPUS 4x4 (AGENTE LÓGICO)")
     print("=" * 55)
+    print("💡 DICA: Pressione [ENTER] para sortear qualquer coordenada aleatoriamente.\n")
 
-    start_in = get_coordinate_input("👉 Posição Inicial do Robô: ")
-    gold_in = get_coordinate_input("👉 Posição do Ouro: ")
-    wumpus_in = get_coordinate_input("👉 Posição do Wumpus: ")
+    start_in = get_coordinate_input("👉 Posição Inicial do Robô (linha,coluna): ")
+    gold_in = get_coordinate_input("👉 Posição do Ouro (linha,coluna): ")
+    wumpus_in = get_coordinate_input("👉 Posição do Wumpus (linha,coluna): ")
 
     pits_in = []
-    p1 = get_coordinate_input("👉 Posição do Poço 1: ")
+    p1 = get_coordinate_input("👉 Posição do Poço 1 (linha,coluna): ")
     if p1:
         pits_in.append(p1)
-    p2 = get_coordinate_input("👉 Posição do Poço 2: ")
+    p2 = get_coordinate_input("👉 Posição do Poço 2 (linha,coluna): ")
     if p2:
         pits_in.append(p2)
 

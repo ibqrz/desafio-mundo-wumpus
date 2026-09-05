@@ -28,3 +28,10 @@ Ouro: (0,2)
 Wumpus: (3,1) 
 Poço 1: (0,3) 
 Poço 2: (1,1) 
+
+## Quarta - apenas layout para quando o robô já inicia sem ter caminho seguro
+
+  🤖 Robô (Início): (1, 1)
+  💰 Ouro:          (1, 3)
+  🦨 Wumpus:        (1, 0)
+  🛑 Poços:         [(3, 2), (0, 2)]
