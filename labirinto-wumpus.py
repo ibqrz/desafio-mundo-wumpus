@@ -4,6 +4,15 @@ import random
 import time
 
 
+# Matriz de Conhecimento:
+        # '?'  = Desconhecido (⬛)
+        # 'OK' = Seguro (🟢 não visitado / 🟩 visitado)
+        # '?W' = Possível Wumpus (🟡)
+        # '?P' = Possível Poço (🔵)
+        # '?WP'= Possível Wumpus e Poço simultâneo (🌐)
+        # 'W'  = Wumpus Confirmado (🦨)
+        # 'P'  = Poço Confirmado (🛑)
+
 class WumpusWorld:
 
     def __init__(self, start=None, gold=None, wumpus=None, pits=None):
