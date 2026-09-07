@@ -1,5 +1,7 @@
 # Coordenadas:
 
+Coordenadas de Teste
+
 ## Primeira - foi identificado que era necessário identificar e marcar 
 casas de possíveis perigos, separando o que era possivelmente wumpus e o que era poço:
 
