@@ -1,4 +1,21 @@
-- t-inicial: tem so a coordenada 1
+Análise e Explicação do Prompt (Relatório):
 
-- v2 - ajusta a 1 mas 2 parou de funcionar
+Por que você estruturou o prompt dessa maneira?
+R: Tentei estruturar o código conforme requisitos do desafio, tentando 
+explicar de maneira completa o que queria que fosse feito.
 
+O LLM gerou o código correto de primeira ou foram necessários reajustes/correções (refinement)?
+R: O código não foi gerado corretamente na primeira tentativa, foram necessários 
+alguns ajustes conforme testes iam prosseguindo.
+
+
+Quais foram as dificuldades encontradas nas respostas da IA?
+R: Quando necessitava de um ajuste, a IA nem sempre conseguia ajudar na primeira vez,
+foi nesserária mais de uma tentativa para corigir o código.
+
+
+Como você garantiu que o código gerado é confiável e funciona para diferentes mapas?
+R: O código foi estruturado para que tivesse a opção de escolher as coordenadas dos itens
+da caverna ou coloca-los em locais aleatórios. Além disso, o terminal exibia cada ação do robô,
+separando em passos, com isso foi possivel realizar diversos testes, analisar o caminho 
+percorrido pelo robô e identificar possiveis erros.
