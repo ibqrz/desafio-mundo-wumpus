@@ -4,6 +4,15 @@ import random
 import time
 
 
+# Matriz de Conhecimento:
+        # '?'  = Desconhecido (⬛)
+        # 'OK' = Seguro (🟢 não visitado / 🟩 visitado)
+        # '?W' = Possível Wumpus (🟡)
+        # '?P' = Possível Poço (🔵)
+        # '?WP'= Possível Wumpus e Poço simultâneo (🌐)
+        # 'W'  = Wumpus Confirmado (🦨)
+        # 'P'  = Poço Confirmado (🛑)
+
 class WumpusWorld:
 
     def __init__(self, start=None, gold=None, wumpus=None, pits=None):
@@ -231,6 +240,26 @@ class WumpusWorld:
                     queue.append(path + [n])
         return None
 
+    def rota_com_risco_bfs(self, pos_inicial, pos_objetivo):
+        queue = collections.deque([[pos_inicial]])
+        seen = {pos_inicial}
+
+        while queue:
+            path = queue.popleft()
+            curr = path[-1]
+
+            if curr == pos_objetivo:
+                return path
+
+            for n in self.get_adjacent(curr):
+                is_navigable = (n == pos_objetivo) or n in self.visited or (
+                    self.pit_status[n] == "NO" and self.wumpus_status[n] == "NO"
+                )
+                if is_navigable and n not in seen:
+                    seen.add(n)
+                    queue.append(path + [n])
+        return None
+
     def get_cell_symbol(self, cell):
         if cell == self.current_pos:
             return "🤖"
@@ -305,7 +334,7 @@ class WumpusWorld:
 
     def solve(self):
         print("\n" + "⚙️ " * 15)
-        print("  GABARITO INICIAL DA CAVERNA (POSIÇÕES REAIS em X,Y)")
+        print("      GABARITO INICIAL DA CAVERNA (POSIÇÕES REAIS em X,Y)")
         print("⚙️ " * 15)
         print(f"  🤖 Robô (Início): {self.start_pos}")
         print(f"  💰 Ouro:          {self.gold_pos}")
@@ -326,9 +355,21 @@ class WumpusWorld:
                 print(
                     "\n🏆 VITÓRIA! O Pote de Ouro foi encontrado com sucesso!"
                 )
-                print("🏁 CAMINHO SEGURO PERCORRIDO ATÉ O OURO (X, Y):")
+                print("🏁 CAMINHO PERCORRIDO ATÉ O OURO (X, Y):")
                 print(" -> ".join(f"[{x},{y}]" for x, y in self.path_taken))
                 return True
+
+            if self.current_pos in self.pits:
+                print("\n💀 DERROTA! O robô assumiu o risco e caiu em um Poço!")
+                print("📍 CAMINHO PERCORRIDO ATÉ A DERROTA (X, Y):")
+                print(" -> ".join(f"[{x},{y}]" for x, y in self.path_taken))
+                return False
+
+            if self.current_pos == self.wumpus_pos:
+                print("\n💀 DERROTA! O robô assumiu o risco e foi devorado pelo Wumpus!")
+                print("📍 CAMINHO PERCORRIDO ATÉ A DERROTA (X, Y):")
+                print(" -> ".join(f"[{x},{y}]" for x, y in self.path_taken))
+                return False
 
             objetivos = [
                 c
@@ -338,25 +379,49 @@ class WumpusWorld:
                 and self.wumpus_status[c] == "NO"
             ]
 
-            if not objetivos:
-                print("\n❌ NÃO HÁ CAMINHO SEGURO CONFIRMADO ATÉ O OURO!")
-                print(
-                    "A IA interrompeu a movimentação para evitar riscos de falha/morte."
-                )
-                print("\n📍 CAMINHO SEGURO PERCORRIDO ATÉ O MOMENTO DA PARADA:")
-                print(" -> ".join(f"[{x},{y}]" for x, y in self.path_taken))
-                break
-
             melhor_rota = None
-            for obj in objetivos:
-                rota = self.rota_segura_bfs(self.current_pos, obj)
-                if rota:
-                    if melhor_rota is None or len(rota) < len(melhor_rota):
-                        melhor_rota = rota
+            assumindo_risco = False
+
+            if objetivos:
+                for obj in objetivos:
+                    rota = self.rota_segura_bfs(self.current_pos, obj)
+                    if rota:
+                        if melhor_rota is None or len(rota) < len(melhor_rota):
+                            melhor_rota = rota
+
+            if not melhor_rota:
+                assumindo_risco = True
+                candidatos_risco = [
+                    c for c in self.all_coords if c not in self.visited
+                ]
+
+                def nivel_risco(cell):
+                    risco = 0
+                    if self.pit_status[cell] == "CONFIRMED":
+                        risco += 50
+                    elif self.pit_status[cell] == "POSSIBLE":
+                        risco += 1
+
+                    if self.wumpus_status[cell] == "CONFIRMED":
+                        risco += 50
+                    elif self.wumpus_status[cell] == "POSSIBLE":
+                        risco += 1
+                    return risco
+
+                melhor_score = None
+
+                for obj in candidatos_risco:
+                    rota = self.rota_com_risco_bfs(self.current_pos, obj)
+                    if rota and len(rota) >= 2:
+                        risco = nivel_risco(obj)
+                        score = (risco, len(rota))
+                        if melhor_score is None or score < melhor_score:
+                            melhor_score = score
+                            melhor_rota = rota
 
             if not melhor_rota or len(melhor_rota) < 2:
-                print("\n❌ Não foi possível traçar uma rota segura.")
-                print("\n📍 CAMINHO SEGURO PERCORRIDO ATÉ O MOMENTO DA PARADA:")
+                print("\n❌ Não há mais salas para explorar no labirinto.")
+                print("\n📍 CAMINHO PERCORRIDO ATÉ O MOMENTO DA PARADA:")
                 print(" -> ".join(f"[{x},{y}]" for x, y in self.path_taken))
                 break
 
@@ -368,8 +433,13 @@ class WumpusWorld:
             self.update_knowledge(self.current_pos)
 
             time.sleep(0.8)
+            msg_risco = (
+                " (ASSUMINDO RISCO!)"
+                if assumindo_risco and proximo_passo not in self.visited
+                else ""
+            )
             self.render_grid(
-                action_msg=f"Movimentou-se para a sala {proximo_passo}"
+                action_msg=f"Movimentou-se para a sala {proximo_passo}{msg_risco}"
             )
 
 
